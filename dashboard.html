@@ -178,10 +178,10 @@
   <div class="main">
     <div class="charts">
       <div class="drawbar" id="drawbar">
-        <button class="on" data-m="cursor">커서</button>
-        <button data-m="hline">수평선(지지/저항)</button>
+        <button class="on" data-m="cursor">커서(이동)</button>
+        <button data-m="edit">편집</button>
+        <button data-m="hline">수평선</button>
         <button data-m="trend">추세선</button>
-        <button data-m="_undo">마지막 삭제</button>
         <button data-m="_clear">전체 삭제</button>
         <span class="ds" id="drawStatus"></span>
       </div>
@@ -309,7 +309,7 @@ const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
-  drawMode:'cursor', draw:{items:[],refs:[],pending:null},
+  drawMode:'cursor', draw:{items:[],sel:null,draft:null},
   journal:loadLS('matilda_journal',[])};
 let priceChart,oscChart,candle,vol,S={},oscSeries={},syncing=false;
 let btChart=null,btSeries=null;
@@ -335,26 +335,11 @@ function makeCharts(){
   const sync=(src,dst)=>src.timeScale().subscribeVisibleLogicalRangeChange(r=>{
     if(syncing||!r)return; syncing=true; dst.timeScale().setVisibleLogicalRange(r); syncing=false;});
   sync(priceChart,oscChart); sync(oscChart,priceChart);
-  priceChart.subscribeClick(param=>{
-    if(state.drawMode==='cursor'||!param.point||param.time===undefined)return;
-    const price=candle.coordinateToPrice(param.point.y);
-    if(price==null)return;
-    if(state.drawMode==='hline'){
-      state.draw.items.push({id:Date.now()+'',type:'hline',price:Math.round(price*100)/100,color:C.amber});
-      saveDrawings();redrawDrawings();
-    }else if(state.drawMode==='trend'){
-      if(!state.draw.pending){state.draw.pending={time:param.time,price};setDrawStatus('두 번째 점을 클릭하세요');}
-      else{
-        state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,
-          p1:{time:state.draw.pending.time,price:Math.round(state.draw.pending.price*100)/100},
-          p2:{time:param.time,price:Math.round(price*100)/100}});
-        state.draw.pending=null;setDrawStatus('');saveDrawings();redrawDrawings();
-      }
-    }
-  });
+  priceChart.timeScale().subscribeVisibleLogicalRangeChange(()=>renderOverlay());
   window.addEventListener('resize',()=>{
     priceChart.applyOptions({width:document.getElementById('price').clientWidth});
-    oscChart.applyOptions({width:document.getElementById('osc').clientWidth});});
+    oscChart.applyOptions({width:document.getElementById('osc').clientWidth});
+    resizeOverlay();});
   return true;
 }
 function applyToggles(){
@@ -633,37 +618,159 @@ async function runBacktest(){
 }
 document.getElementById('btRun').onclick=runBacktest;
 
-/* ---------- 그리기 도구 (추세선 / 수평 지지·저항) ---------- */
+/* ---------- 그리기 도구: 차트 위 오버레이 캔버스 (트레이딩뷰 방식) ---------- */
+let ov,octx,ovDpr=1;
+const HIT=7, HANDLE=8;
 function setDrawStatus(t){document.getElementById('drawStatus').textContent=t;}
-function clearDrawRefs(){
-  state.draw.refs.forEach(r=>{try{ if(r.kind==='hline')candle.removePriceLine(r.obj); else priceChart.removeSeries(r.obj);}catch(e){}});
-  state.draw.refs=[];
+// 좌표 변환
+function timeX(t){const x=priceChart.timeScale().timeToCoordinate(t);return x==null?null:x;}
+function priceY(p){const y=candle.priceToCoordinate(p);return y==null?null:y;}
+function xToTime(x){return priceChart.timeScale().coordinateToTime(x);}
+function yToPrice(y){return candle.coordinateToPrice(y);}
+
+function setupOverlay(){
+  const host=document.getElementById('price');
+  host.style.position='relative';
+  ov=document.createElement('canvas');
+  ov.style.position='absolute'; ov.style.left='0'; ov.style.top='0';
+  ov.style.pointerEvents='none'; ov.style.zIndex='3';
+  host.appendChild(ov);
+  octx=ov.getContext('2d');
+  resizeOverlay();
+  ov.addEventListener('mousedown',onDown);
+  ov.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+  window.addEventListener('keydown',e=>{
+    if((e.key==='Delete'||e.key==='Backspace')&&state.draw.sel!=null){
+      state.draw.items.splice(state.draw.sel,1);state.draw.sel=null;saveDrawings();renderOverlay();renderDrawList();}
+  });
 }
-function redrawDrawings(){
-  if(!candle)return; clearDrawRefs();
-  state.draw.items.forEach(it=>{
+function resizeOverlay(){
+  if(!ov)return;
+  const host=document.getElementById('price');
+  ovDpr=window.devicePixelRatio||1;
+  ov.style.width=host.clientWidth+'px'; ov.style.height=host.clientHeight+'px';
+  ov.width=host.clientWidth*ovDpr; ov.height=host.clientHeight*ovDpr;
+  octx.setTransform(ovDpr,0,0,ovDpr,0,0);
+  renderOverlay();
+}
+function setOverlayInteractive(on){ if(ov)ov.style.pointerEvents=on?'auto':'none'; }
+
+// 그리기 렌더
+function seg(x1,y1,x2,y2,color,w){octx.strokeStyle=color;octx.lineWidth=w;octx.beginPath();octx.moveTo(x1,y1);octx.lineTo(x2,y2);octx.stroke();}
+function dot(x,y,color){octx.fillStyle=color;octx.beginPath();octx.arc(x,y,4,0,7);octx.fill();
+  octx.strokeStyle='#0F131A';octx.lineWidth=1.5;octx.stroke();}
+function renderOverlay(){
+  if(!octx)return;
+  octx.clearRect(0,0,ov.width,ov.height);
+  const W=ov.clientWidth||document.getElementById('price').clientWidth;
+  state.draw.items.forEach((it,idx)=>{
+    const seld=idx===state.draw.sel;
+    const col=it.color||(it.type==='hline'?C.amber:C.steel);
     if(it.type==='hline'){
-      const pl=candle.createPriceLine({price:it.price,color:it.color||C.amber,lineWidth:1,lineStyle:0,axisLabelVisible:true,title:'S/R'});
-      state.draw.refs.push({kind:'hline',obj:pl});
+      const y=priceY(it.price); if(y==null)return;
+      seg(0,y,W,y,col,seld?2:1.3);
+      octx.fillStyle=col;octx.font='10px monospace';octx.fillText('$'+it.price,4,y-4);
+      if(seld){dot(W*0.5,y,col);}
     }else if(it.type==='trend'&&it.p1&&it.p2){
-      const ls=priceChart.addLineSeries({color:it.color||C.steel,lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-      const pts=[{time:it.p1.time,value:it.p1.price},{time:it.p2.time,value:it.p2.price}].sort((a,b)=>a.time<b.time?-1:1);
-      try{ls.setData(pts);}catch(e){}
-      state.draw.refs.push({kind:'trend',obj:ls});
+      const x1=timeX(it.p1.time),y1=priceY(it.p1.price),x2=timeX(it.p2.time),y2=priceY(it.p2.price);
+      if(x1==null||y1==null||x2==null||y2==null)return;
+      seg(x1,y1,x2,y2,col,seld?2.4:1.8);
+      if(seld){dot(x1,y1,col);dot(x2,y2,col);}
     }
   });
-  renderDrawList();
+  // 그리는 중 고무줄
+  const d=state.draw.draft;
+  if(d&&d.x2!=null){seg(d.x1,d.y1,d.x2,d.y2,C.steel,1.6);}
 }
+
+// 히트 테스트 (픽셀)
+function dist2seg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1; const l2=dx*dx+dy*dy;
+  let t=l2?((px-x1)*dx+(py-y1)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+  const cx=x1+t*dx,cy=y1+t*dy; return Math.hypot(px-cx,py-cy);
+}
+function hitTest(px,py){
+  const W=ov.clientWidth;
+  for(let i=state.draw.items.length-1;i>=0;i--){
+    const it=state.draw.items[i];
+    if(it.type==='hline'){const y=priceY(it.price);if(y!=null&&Math.abs(py-y)<HIT)return{idx:i,part:'whole'};}
+    else if(it.type==='trend'&&it.p1&&it.p2){
+      const x1=timeX(it.p1.time),y1=priceY(it.p1.price),x2=timeX(it.p2.time),y2=priceY(it.p2.price);
+      if(x1==null||x2==null)continue;
+      if(Math.hypot(px-x1,py-y1)<HANDLE)return{idx:i,part:'p1'};
+      if(Math.hypot(px-x2,py-y2)<HANDLE)return{idx:i,part:'p2'};
+      if(dist2seg(px,py,x1,y1,x2,y2)<HIT)return{idx:i,part:'whole'};
+    }
+  }
+  return null;
+}
+
+let drag=null;
+function onDown(e){
+  const px=e.offsetX,py=e.offsetY, m=state.drawMode;
+  if(m==='hline'){
+    const p=yToPrice(py); if(p==null)return;
+    state.draw.items.push({id:Date.now()+'',type:'hline',price:Math.round(p*100)/100,color:C.amber});
+    state.draw.sel=state.draw.items.length-1; selectTool('edit'); saveDrawings();renderOverlay();renderDrawList();
+  }else if(m==='trend'){
+    const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
+    state.draw.draft={t1:t,p1v:p,x1:px,y1:py,x2:px,y2:py}; drag={kind:'draft'};
+  }else if(m==='edit'){
+    const h=hitTest(px,py);
+    if(h){state.draw.sel=h.idx; drag={kind:'move',idx:h.idx,part:h.part,lastX:px,lastY:py};}
+    else state.draw.sel=null;
+    renderOverlay();renderDrawList();
+  }
+}
+function onMove(e){
+  if(!drag)return;
+  const px=e.offsetX,py=e.offsetY;
+  if(drag.kind==='draft'){state.draw.draft.x2=px;state.draw.draft.y2=py;renderOverlay();return;}
+  if(drag.kind==='move'){
+    const it=state.draw.items[drag.idx]; if(!it)return;
+    if(it.type==='hline'){const p=yToPrice(py); if(p!=null)it.price=Math.round(p*100)/100;}
+    else if(it.type==='trend'){
+      if(drag.part==='p1'){const t=xToTime(px),p=yToPrice(py);if(t!=null)it.p1.time=t;if(p!=null)it.p1.price=Math.round(p*100)/100;}
+      else if(drag.part==='p2'){const t=xToTime(px),p=yToPrice(py);if(t!=null)it.p2.time=t;if(p!=null)it.p2.price=Math.round(p*100)/100;}
+      else{ // whole: 픽셀 이동량을 각 끝점에 적용
+        const x1=timeX(it.p1.time),y1=priceY(it.p1.price),x2=timeX(it.p2.time),y2=priceY(it.p2.price);
+        const ddx=px-drag.lastX, ddy=py-drag.lastY;
+        const nt1=xToTime(x1+ddx),np1=yToPrice(y1+ddy),nt2=xToTime(x2+ddx),np2=yToPrice(y2+ddy);
+        if(nt1!=null)it.p1.time=nt1; if(np1!=null)it.p1.price=Math.round(np1*100)/100;
+        if(nt2!=null)it.p2.time=nt2; if(np2!=null)it.p2.price=Math.round(np2*100)/100;
+        drag.lastX=px;drag.lastY=py;
+      }
+    }
+    renderOverlay();
+  }
+}
+function onUp(e){
+  if(!drag){return;}
+  if(drag.kind==='draft'){
+    const d=state.draw.draft;
+    const t2=xToTime(d.x2),p2=yToPrice(d.y2);
+    if(t2!=null&&p2!=null&&(Math.abs(d.x2-d.x1)>3||Math.abs(d.y2-d.y1)>3)){
+      state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,
+        p1:{time:d.t1,price:Math.round(d.p1v*100)/100},p2:{time:t2,price:Math.round(p2*100)/100}});
+      state.draw.sel=state.draw.items.length-1; selectTool('edit');
+    }
+    state.draw.draft=null; saveDrawings();renderOverlay();renderDrawList();
+  }else if(drag.kind==='move'){ saveDrawings();renderDrawList(); }
+  drag=null;
+}
+
 function renderDrawList(){
   const el=document.getElementById('dlist');
-  if(!state.draw.items.length){el.innerHTML='<div class="dempty">없음 — 도구를 골라 차트를 클릭하세요.</div>';return;}
-  el.innerHTML=state.draw.items.map(it=>{
+  if(!state.draw.items.length){el.innerHTML='<div class="dempty">없음 — 도구를 골라 차트에 그리세요.</div>';return;}
+  el.innerHTML=state.draw.items.map((it,i)=>{
     const c=it.color||(it.type==='hline'?C.amber:C.steel);
     const lab=it.type==='hline'?('수평 $'+it.price):('추세 '+it.p1.price+'→'+it.p2.price);
-    return '<div class="di"><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-id="'+it.id+'">×</button></div>';
+    const sel=i===state.draw.sel?' style="background:rgba(106,169,255,.10);border-radius:6px"':'';
+    return '<div class="di"'+sel+'><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-i="'+i+'">×</button></div>';
   }).join('');
   el.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
-    state.draw.items=state.draw.items.filter(x=>x.id!=b.dataset.id);saveDrawings();redrawDrawings();});
+    state.draw.items.splice(+b.dataset.i,1);state.draw.sel=null;saveDrawings();renderOverlay();renderDrawList();});
 }
 async function saveDrawings(){
   saveLS('matilda_draw_'+state.ticker,state.draw.items);
@@ -677,18 +784,22 @@ async function loadDrawings(){
     if(r.configured){document.getElementById('drawSync').textContent='클라우드 저장(Supabase)';
       if(Array.isArray(r.drawings)&&r.drawings.length)items=r.drawings;}
   }catch(e){}
-  state.draw.items=items;state.draw.pending=null;setDrawStatus('');redrawDrawings();
+  state.draw.items=items;state.draw.sel=null;state.draw.draft=null;renderOverlay();renderDrawList();
+}
+function selectTool(m){
+  state.drawMode=m; state.draw.draft=null;
+  setOverlayInteractive(m!=='cursor');
+  setDrawStatus(m==='hline'?'클릭해서 수평선 추가':m==='trend'?'드래그해서 추세선 긋기':m==='edit'?'선 클릭=선택, 끝점/선 드래그=이동, Delete=삭제':'');
+  document.querySelectorAll('#drawbar button[data-m]').forEach(x=>{if(['cursor','edit','hline','trend'].includes(x.dataset.m))x.classList.toggle('on',x.dataset.m===m);});
 }
 document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
   const m=b.dataset.m;
-  if(m==='_clear'){state.draw.items=[];state.draw.pending=null;saveDrawings();redrawDrawings();return;}
-  if(m==='_undo'){state.draw.items.pop();state.draw.pending=null;saveDrawings();redrawDrawings();return;}
-  state.drawMode=m;state.draw.pending=null;setDrawStatus(m==='hline'?'차트를 클릭해 수평선을 추가':m==='trend'?'시작점을 클릭하세요':'');
-  document.querySelectorAll('#drawbar button[data-m="cursor"],#drawbar button[data-m="hline"],#drawbar button[data-m="trend"]').forEach(x=>x.classList.toggle('on',x.dataset.m===m));
+  if(m==='_clear'){state.draw.items=[];state.draw.sel=null;saveDrawings();renderOverlay();renderDrawList();return;}
+  selectTool(m);
 });
 
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
-if(makeCharts()){load();fetchSentiment();}
+if(makeCharts()){setupOverlay();load();fetchSentiment();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
