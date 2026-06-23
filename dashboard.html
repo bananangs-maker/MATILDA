@@ -79,6 +79,46 @@
   .tag.danger{color:var(--stop);background:rgba(255,90,77,.14)}
   .flag .txt b{color:var(--ink)}
   .none{color:var(--faint);font-size:11.5px;font-family:var(--mono)}
+  .card details{margin:0}
+  .card summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--muted)}
+  .card summary::-webkit-details-marker{display:none}
+  .card summary::before{content:'▸ ';color:var(--faint)}
+  .card details[open] summary::before{content:'▾ '}
+  .numgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px;margin-top:10px}
+  .numgrid .nf{display:flex;flex-direction:column;gap:3px}
+  .numgrid .nf span{font-size:10.5px;color:var(--muted)}
+  .numgrid input{background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+    color:var(--ink);font-family:var(--mono);font-size:12px;padding:5px 7px;width:100%}
+  .numgrid input:focus{outline:none;border-color:var(--steel)}
+  .reset{margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+    background:none;border:1px solid var(--border);border-radius:6px;padding:5px 9px;cursor:pointer}
+  .fibrow{display:flex;gap:6px;margin-top:6px}
+  .fibrow input{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+    color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px 8px;min-width:0}
+  .fibrow input:focus{outline:none;border-color:var(--steel)}
+  .minibtn{font-family:var(--mono);font-size:10.5px;font-weight:700;color:#0a0e14;background:var(--steel);
+    border:none;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+  .minibtn.ghost{background:none;color:var(--muted);border:1px solid var(--border)}
+  .journal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin-top:16px}
+  .journal h3{font-family:var(--disp);font-size:14px;margin-bottom:12px}
+  .jform{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+  .jform .jf{display:flex;flex-direction:column;gap:4px}
+  .jform .jf span{font-size:10.5px;color:var(--muted);font-family:var(--mono)}
+  .jform input,.jform select{background:var(--panel2);border:1px solid var(--border);border-radius:7px;
+    color:var(--ink);font-family:var(--body);font-size:12.5px;padding:7px 9px}
+  .jform input:focus,.jform select:focus{outline:none;border-color:var(--steel)}
+  .jform .memo{min-width:200px;flex:1}
+  table.jt{width:100%;border-collapse:collapse;font-size:12px}
+  table.jt th{text-align:left;color:var(--muted);font-family:var(--mono);font-size:10.5px;
+    font-weight:700;padding:6px 8px;border-bottom:1px solid var(--border)}
+  table.jt td{padding:7px 8px;border-bottom:1px solid var(--panel2);color:var(--ink)}
+  table.jt td.act-buy{color:var(--go);font-weight:700}
+  table.jt td.act-sell{color:var(--stop);font-weight:700}
+  table.jt td.act-add{color:var(--steel);font-weight:700}
+  table.jt .del{cursor:pointer;color:var(--faint);background:none;border:none;font-size:14px}
+  table.jt .del:hover{color:var(--stop)}
+  .jbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .jempty{color:var(--faint);font-family:var(--mono);font-size:12px;padding:10px 0}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -132,18 +172,57 @@
         <input type="range" id="vix" min="10" max="55" value="18" step="0.5">
         <label>공포·탐욕 <span class="val" id="fngv">50</span></label>
         <input type="range" id="fng" min="0" max="100" value="50" step="1">
-        <label>피보나치 / 추세선 위치</label>
-        <div class="seg" id="struct">
-          <button data-v="support">지지</button>
-          <button class="on" data-v="middle">중간</button>
-          <button data-v="resistance">저항</button>
+        <label>피보나치 (스윙 고가 / 저가)</label>
+        <div class="fibrow">
+          <input type="number" id="fibHi" placeholder="고가" step="0.01">
+          <input type="number" id="fibLo" placeholder="저가" step="0.01">
         </div>
+        <div class="fibrow">
+          <button class="minibtn" id="fibAuto">보이는 구간 자동</button>
+          <button class="minibtn ghost" id="fibClear">지우기</button>
+        </div>
+      </div>
+      <div class="card">
+        <details id="setBox">
+          <summary>지표 임계값 설정</summary>
+          <div class="numgrid">
+            <div class="nf"><span>RSI 과매수</span><input type="number" data-set="rsiOB"></div>
+            <div class="nf"><span>RSI 과매도</span><input type="number" data-set="rsiOS"></div>
+            <div class="nf"><span>MFI 과매수</span><input type="number" data-set="mfiOB"></div>
+            <div class="nf"><span>MFI 과매도</span><input type="number" data-set="mfiOS"></div>
+            <div class="nf"><span>VIX 경계≥</span><input type="number" data-set="vixAmber"></div>
+            <div class="nf"><span>VIX 위험≥</span><input type="number" data-set="vixRed"></div>
+            <div class="nf"><span>탐욕 과열≥</span><input type="number" data-set="fngHot"></div>
+            <div class="nf"><span>상한 GREEN%</span><input type="number" data-set="ceilG"></div>
+            <div class="nf"><span>상한 AMBER%</span><input type="number" data-set="ceilA"></div>
+            <div class="nf"><span>상한 RED%</span><input type="number" data-set="ceilR"></div>
+          </div>
+          <button class="reset" id="setReset">기본값 복원</button>
+        </details>
       </div>
       <div class="card">
         <div class="lab">신호 충돌 · 경고</div>
         <div class="flags" id="flags"></div>
       </div>
     </div>
+  </div>
+  <div class="journal">
+    <h3>매매 일지</h3>
+    <div class="jform">
+      <div class="jf"><span>날짜</span><input type="date" id="jDate"></div>
+      <div class="jf"><span>종목</span><select id="jTicker"><option>TQQQ</option><option>SOXL</option></select></div>
+      <div class="jf"><span>구분</span><select id="jAction"><option value="buy">매수</option><option value="add">불타기</option><option value="sell">매도</option></select></div>
+      <div class="jf"><span>가격($)</span><input type="number" id="jPrice" step="0.01" style="width:90px"></div>
+      <div class="jf"><span>수량/비중</span><input type="text" id="jSize" style="width:90px" placeholder="예: 10주"></div>
+      <div class="jf memo"><span>메모</span><input type="text" id="jMemo" placeholder="진입 근거 / 판정 등"></div>
+      <button class="minibtn" id="jAdd">기록 추가</button>
+    </div>
+    <div class="jbar">
+      <button class="minibtn ghost" id="jExport">CSV 내보내기</button>
+      <button class="minibtn ghost" id="jImportBtn">CSV 가져오기</button>
+      <input type="file" id="jImport" accept=".csv" style="display:none">
+    </div>
+    <div id="jTableWrap"></div>
   </div>
   <footer>
     공개 시세(Yahoo Finance / Stooq) 기반 · 지연/일봉 데이터입니다. 가격 기반 지표는 자동, VIX·공포탐욕·구조는 직접 입력.<br>
@@ -153,9 +232,15 @@
 <script>
 const C={ink:'#EAEEF6',grid:'#1E2632',border:'#2B3442',
   up:'#3DD68C',down:'#FF5A4D',steel:'#6AA9FF',amber:'#F2B233',purple:'#C792EA',faint:'#9aa7bd'};
+const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:22,vixRed:30,fngHot:80,ceilG:100,ceilA:55,ceilR:25};
+function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
+function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true},
-  macro:{vix:18,fng:50,struct:'middle'}, data:null, signals:null};
+  macro:{vix:18,fng:50}, data:null, signals:null,
+  settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
+  fib:{lines:[]},
+  journal:loadLS('matilda_journal',[])};
 let priceChart,oscChart,candle,vol,S={},oscSeries={},syncing=false;
 
 function makeCharts(){
@@ -236,9 +321,10 @@ async function load(){
     st.textContent='실패: '+e.message+' — python app.py 실행 여부 확인';
   }
 }
-function regime(){const v=state.macro.vix,f=state.macro.fng;let tier=v>=30?'RED':v>=22?'AMBER':'GREEN';
-  if(f>=80&&tier==='GREEN')tier='AMBER';
-  const ceil=tier==='GREEN'?100:tier==='AMBER'?55:25;
+function regime(){const v=state.macro.vix,f=state.macro.fng,S2=state.settings;
+  let tier=v>=S2.vixRed?'RED':v>=S2.vixAmber?'AMBER':'GREEN';
+  if(f>=S2.fngHot&&tier==='GREEN')tier='AMBER';
+  const ceil=tier==='GREEN'?S2.ceilG:tier==='AMBER'?S2.ceilA:S2.ceilR;
   const label={GREEN:'리스크-온',AMBER:'경계',RED:'리스크-오프'}[tier];return{tier,ceil,label};}
 function trend(s){const longOk=s.ma180==='above'&&s.ltcross!=='bear';
   const hardBear=s.ma180==='below'&&s.ltcross==='bear';
@@ -250,7 +336,7 @@ function trend(s){const longOk=s.ma180==='above'&&s.ltcross!=='bear';
 function decide(){
   const s=state.signals; if(!s)return;
   const reg=regime(),tr=trend(s);
-  const up=tr.longOk, ob=s.rsi>=70||s.mfi>=80;
+  const up=tr.longOk, St=state.settings, ob=s.rsi>=St.rsiOB||s.mfi>=St.mfiOB;
   let tmv,tmp;
   if(up){if(s.bbpos==='above'){tmv='GREEN';tmp=reg.tier==='GREEN'?'상단 돌파+강세 레짐=밴드타기':'상단이나 레짐 경계=분할익절';}
     else if(s.bbpos==='upper'){tmv='GREEN';tmp='중심~상단, 보유·소량 추가';}
@@ -283,12 +369,12 @@ function decide(){
   const fl=[];
   if(reg.tier==='RED'&&tr.v!=='RED')fl.push(['danger','거시 우선','VIX 스트레스가 추세를 이깁니다. <b>레버리지 비중 축소</b> 1순위.']);
   if(tr.longOk&&ob)fl.push(['info','추세장 과매수','매도 신호 아님. 밴드타기 유지, 신규 풀매수만 자제.']);
-  if(tr.hardBear&&(s.rsi<=30||s.mfi<=20))fl.push(['warn','역추세 과매도','반등 단타만, 소액+빠른 청산.']);
+  if(tr.hardBear&&(s.rsi<=St.rsiOS||s.mfi<=St.mfiOS))fl.push(['warn','역추세 과매도','반등 단타만, 소액+빠른 청산.']);
   if(s.macd==='golden'&&s.ma180==='below')fl.push(['warn','약한 골든','180선 아래=신뢰 낮음, 확인매수 소액.']);
   if(s.diver==='bear'&&tr.longOk)fl.push(['warn','약세 다이버전스','추세 둔화. 신규 중단·분할익절(전량청산은 아님).']);
   if(s.diver==='bull'&&tr.hardBear)fl.push(['info','강세 다이버전스','선행 반등 가능, 전환 확인 전 소액.']);
   if(s.bbwidth==='squeeze')fl.push(['info','BB 스퀴즈','변동성 수축=큰 변동 임박. 돌파 방향 확인 후 진입.']);
-  if(state.macro.fng>=80&&tr.longOk)fl.push(['warn','과열','극단적 탐욕. 비중 상한 낮춰 운용.']);
+  if(state.macro.fng>=St.fngHot&&tr.longOk)fl.push(['warn','과열','극단적 탐욕. 비중 상한 낮춰 운용.']);
   const box=document.getElementById('flags');
   box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 충돌 없음 — 신호 정렬 양호</div>';
 }
@@ -306,9 +392,95 @@ document.querySelectorAll('#osc-tabs button').forEach(b=>b.onclick=()=>{
 [['vix','vixv'],['fng','fngv']].forEach(p=>{
   const el=document.getElementById(p[0]);el.oninput=()=>{state.macro[p[0]]=parseFloat(el.value);
     document.getElementById(p[1]).textContent=el.value;decide();};});
-document.querySelectorAll('#struct button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#struct button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');state.macro.struct=b.dataset.v;decide();});
+/* ---------- 설정 (임계값) ---------- */
+function renderSettings(){document.querySelectorAll('[data-set]').forEach(inp=>{inp.value=state.settings[inp.dataset.set];});}
+document.querySelectorAll('[data-set]').forEach(inp=>inp.addEventListener('change',()=>{
+  const v=parseFloat(inp.value);
+  if(!isNaN(v)){state.settings[inp.dataset.set]=v;saveLS('matilda_settings',state.settings);decide();}}));
+document.getElementById('setReset').onclick=()=>{
+  state.settings=Object.assign({},SET_DEFAULTS);saveLS('matilda_settings',state.settings);renderSettings();decide();};
+renderSettings();
+
+/* ---------- 피보나치 (차트 수평선) ---------- */
+function clearFib(){state.fib.lines.forEach(l=>{try{candle.removePriceLine(l);}catch(e){}});state.fib.lines=[];}
+function drawFib(){
+  if(!candle)return; clearFib();
+  const hi=parseFloat(document.getElementById('fibHi').value), lo=parseFloat(document.getElementById('fibLo').value);
+  if(isNaN(hi)||isNaN(lo)||hi<=lo)return;
+  [[0,'0%'],[0.236,'23.6%'],[0.382,'38.2%'],[0.5,'50%'],[0.618,'61.8%'],[0.786,'78.6%'],[1,'100%']].forEach(rl=>{
+    const price=hi-(hi-lo)*rl[0];
+    state.fib.lines.push(candle.createPriceLine({price,color:C.purple,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'fib '+rl[1]}));});
+}
+function fibAuto(){
+  const d=state.data; if(!d||!d.candles.length)return;
+  const bars={'3M':63,'6M':126,'1Y':252,'2Y':504}[state.range];
+  const arr=d.candles.slice(Math.max(0,d.candles.length-bars));
+  document.getElementById('fibHi').value=Math.max.apply(null,arr.map(c=>c.high)).toFixed(2);
+  document.getElementById('fibLo').value=Math.min.apply(null,arr.map(c=>c.low)).toFixed(2);
+  drawFib();
+}
+document.getElementById('fibAuto').onclick=fibAuto;
+document.getElementById('fibClear').onclick=()=>{document.getElementById('fibHi').value='';document.getElementById('fibLo').value='';clearFib();};
+['fibHi','fibLo'].forEach(id=>document.getElementById(id).addEventListener('change',drawFib));
+document.querySelectorAll('#ticker button').forEach(b=>b.addEventListener('click',clearFib));
+
+/* ---------- 매매 일지 (localStorage + CSV) ---------- */
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function renderJournal(){
+  const wrap=document.getElementById('jTableWrap');
+  if(!state.journal.length){wrap.innerHTML='<div class="jempty">기록 없음 — 위에서 추가하세요. (이 브라우저에 저장됩니다)</div>';return;}
+  const lab={buy:'매수',add:'불타기',sell:'매도'};
+  const rows=state.journal.slice().reverse().map(e=>
+    '<tr><td>'+e.date+'</td><td>'+e.ticker+'</td><td class="act-'+e.action+'">'+(lab[e.action]||e.action)
+    +'</td><td>'+(e.price?'$'+e.price:'')+'</td><td>'+escapeHtml(e.size||'')+'</td><td>'+escapeHtml(e.memo||'')
+    +'</td><td><button class="del" data-id="'+e.id+'">×</button></td></tr>').join('');
+  wrap.innerHTML='<table class="jt"><thead><tr><th>날짜</th><th>종목</th><th>구분</th><th>가격</th><th>수량/비중</th><th>메모</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  wrap.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
+    state.journal=state.journal.filter(x=>x.id!=b.dataset.id);saveLS('matilda_journal',state.journal);renderJournal();});
+}
+document.getElementById('jAdd').onclick=()=>{
+  const date=document.getElementById('jDate').value||new Date().toISOString().slice(0,10);
+  state.journal.push({id:Date.now()+''+Math.floor(Math.random()*1000),date,
+    ticker:document.getElementById('jTicker').value,action:document.getElementById('jAction').value,
+    price:document.getElementById('jPrice').value,size:document.getElementById('jSize').value,
+    memo:document.getElementById('jMemo').value});
+  saveLS('matilda_journal',state.journal);renderJournal();
+  ['jPrice','jSize','jMemo'].forEach(id=>document.getElementById(id).value='');
+};
+document.getElementById('jExport').onclick=()=>{
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const csv='date,ticker,action,price,size,memo\n'+
+    state.journal.map(e=>[e.date,e.ticker,e.action,e.price,e.size,e.memo].map(esc).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='trade_journal_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(a.href);
+};
+function parseCSV(text){
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=c;}
+    else if(c==='"')q=true; else if(c===','){row.push(cur);cur='';}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cur);rows.push(row);row=[];cur='';}
+    else cur+=c;}
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  return rows.filter(r=>r.length&&!(r.length===1&&r[0]===''));
+}
+document.getElementById('jImportBtn').onclick=()=>document.getElementById('jImport').click();
+document.getElementById('jImport').onchange=ev=>{
+  const file=ev.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{try{
+      parseCSV(reader.result.replace(/^\ufeff/,'')).slice(1).forEach(r=>{ if(r.length>=2&&r[0])
+        state.journal.push({id:Date.now()+''+Math.floor(Math.random()*100000),
+          date:r[0],ticker:r[1],action:r[2]||'buy',price:r[3]||'',size:r[4]||'',memo:r[5]||''});});
+      saveLS('matilda_journal',state.journal);renderJournal();
+    }catch(e){alert('CSV 읽기 실패: '+e.message);} ev.target.value='';};
+  reader.readAsText(file);
+};
+document.getElementById('jDate').value=new Date().toISOString().slice(0,10);
+renderJournal();
+
+/* ---------- 차트 초기화 (반드시 마지막) ---------- */
 if(makeCharts()){load();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
