@@ -69,6 +69,8 @@ def chart(ticker):
         df, source = _load(ticker)
         payload = compute_series(df)
         payload["signals"] = compute_signals(df)
+        import backtest as bt
+        payload["markers"] = bt.markers_from_signals(df, bt.generate_signals(df))
         payload["meta"] = {
             "ticker": ticker, "source": source,
             "asof": str(df["date"].iloc[-1]),
@@ -78,6 +80,36 @@ def chart(ticker):
         return jsonify(payload)
     except Exception as e:
         return jsonify({"error": str(e), "ticker": ticker}), 500
+
+
+@app.route("/backtest/<ticker>")
+def backtest_route(ticker):
+    ticker = ticker.upper()
+    if ticker not in ("TQQQ", "SOXL"):
+        return jsonify({"error": f"지원하지 않는 종목: {ticker}"}), 400
+    from flask import request
+    try:
+        trend_ma = int(request.args.get("trend_ma", 200))
+    except ValueError:
+        trend_ma = 200
+    trend_ma = max(20, min(trend_ma, 250))
+    try:
+        df, source = _load(ticker)
+        import backtest as bt
+        res = bt.run(df, trend_ma=trend_ma)
+        res["meta"] = {"ticker": ticker, "source": source}
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e), "ticker": ticker}), 500
+
+
+@app.route("/sentiment")
+def sentiment_route():
+    try:
+        from sentiment import cnn_sentiment
+        return jsonify(cnn_sentiment())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/health")

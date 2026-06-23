@@ -248,6 +248,15 @@ def compute_signals(df: pd.DataFrame) -> dict:
     # --- 다이버전스 ---
     diver = divergence(close, rsi14)
 
+    # --- 매수/매도 압력 프록시 (최근 20일 상승거래량 비중) ---
+    win = 20
+    chg = close.diff()
+    upv = df["volume"].where(chg > 0, 0).rolling(win).sum()
+    dnv = df["volume"].where(chg < 0, 0).rolling(win).sum()
+    tot = (upv + dnv)
+    press = _safe_last((upv / tot.replace(0, np.nan)) * 100)
+    pressure = round(press, 0) if not np.isnan(press) else 50
+
     return {
         "ma180": ma180,
         "ltcross": ltcross,
@@ -260,6 +269,7 @@ def compute_signals(df: pd.DataFrame) -> dict:
         "mfi": round(_safe_last(mfi14), 1),
         "cci": round(_safe_last(cci20), 0),
         "diver": diver,
+        "pressure": pressure,
         # 참고용 원시값
         "_price": round(c_last, 2),
         "_pctB": round(pb, 3) if not np.isnan(pb) else None,
@@ -327,4 +337,11 @@ def compute_series(df: pd.DataFrame) -> dict:
         "macd_line": _series(dates, mline),
         "macd_signal": _series(dates, msig),
         "macd_hist": _series(dates, mhist, hist_color),
+        "obv": _series(dates, _obv(df)),
     }
+
+
+def _obv(df: pd.DataFrame) -> pd.Series:
+    """On-Balance Volume (매수/매도 압력 프록시)."""
+    sign = np.sign(df["close"].diff().fillna(0))
+    return (sign * df["volume"]).fillna(0).cumsum()
