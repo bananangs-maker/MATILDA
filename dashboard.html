@@ -10,16 +10,16 @@
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root{
-    --bg:#0E0C0B;--panel:#16130F;--panel2:#211C16;--border:#2E2823;
-    --ink:#F2EEE7;--muted:#9A9186;--faint:#665E55;
-    --go:#E7E1D6;--caution:#C9A86A;--stop:#DB3B34;--steel:#DB3B34;
+    --bg:#0F131A;--panel:#171D28;--panel2:#1E2632;--border:#2B3442;
+    --ink:#EAEEF6;--muted:#8A95A8;--faint:#5C667A;
+    --go:#3DD68C;--caution:#F2B233;--stop:#FF5A4D;--steel:#6AA9FF;
     --mono:'JetBrains Mono',monospace;--disp:'Space Grotesk',sans-serif;
     --body:'Pretendard',-apple-system,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-family:var(--body);
     -webkit-font-smoothing:antialiased;
-    background-image:radial-gradient(circle at 15% -10%,rgba(219,59,52,.07),transparent 45%)}
+    background-image:radial-gradient(circle at 15% -10%,rgba(106,169,255,.07),transparent 45%)}
   .wrap{max-width:1340px;margin:0 auto;padding:18px 18px 70px}
   .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
   .brand{font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.01em;margin-right:4px}
@@ -43,7 +43,7 @@
   .osc-tabs{display:flex;gap:6px;margin:8px 4px 4px}
   .osc-tabs button{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);
     background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:5px 12px;cursor:pointer}
-  .osc-tabs button.on{color:var(--ink);border-color:var(--steel);background:rgba(219,59,52,.12)}
+  .osc-tabs button.on{color:var(--ink);border-color:var(--steel);background:rgba(106,169,255,.12)}
   #osc{height:170px}
   .deck{display:flex;flex-direction:column;gap:12px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:14px 15px}
@@ -70,11 +70,11 @@
   .seg{display:flex;gap:5px;margin-top:4px}
   .seg button{flex:1;font-family:var(--body);font-size:11px;color:var(--muted);background:var(--panel2);
     border:1px solid var(--border);border-radius:7px;padding:6px 4px;cursor:pointer}
-  .seg button.on{color:var(--ink);border-color:var(--steel);background:rgba(219,59,52,.12)}
+  .seg button.on{color:var(--ink);border-color:var(--steel);background:rgba(106,169,255,.12)}
   .flags .flag{display:flex;gap:8px;padding:7px 0;border-top:1px solid var(--border);font-size:11.5px;line-height:1.45}
   .flags .flag:first-child{border-top:none}
   .flag .tag{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;height:fit-content;white-space:nowrap}
-  .tag.info{color:var(--steel);background:rgba(219,59,52,.14)}
+  .tag.info{color:var(--steel);background:rgba(106,169,255,.14)}
   .tag.warn{color:var(--caution);background:rgba(242,178,51,.14)}
   .tag.danger{color:var(--stop);background:rgba(255,90,77,.14)}
   .flag .txt b{color:var(--ink)}
@@ -166,14 +166,14 @@
     <div class="status" id="status">차트 불러오는 중…</div>
   </div>
   <div class="toggles" id="toggles">
-    <button class="on" data-s="bb"><span class="sw" style="background:#BDB6A8"></span>볼린저(20,2)</button>
-    <button data-s="ema5"><span class="sw" style="background:#C9A86A"></span>EMA5</button>
-    <button class="on" data-s="ema20"><span class="sw" style="background:#EDE7DC"></span>EMA20</button>
-    <button data-s="sma60"><span class="sw" style="background:#8A7F70"></span>SMA60</button>
-    <button class="on" data-s="sma180"><span class="sw" style="background:#DB3B34"></span>SMA180</button>
-    <button data-s="sar"><span class="sw" style="background:#6B6359"></span>SAR</button>
-    <button class="on" data-s="vol"><span class="sw" style="background:#EDE7DC"></span>거래량</button>
-    <button class="on" data-s="sig"><span class="sw" style="background:#DB3B34"></span>매매신호</button>
+    <button class="on" data-s="bb"><span class="sw" style="background:#6AA9FF"></span>볼린저(20,2)</button>
+    <button data-s="ema5"><span class="sw" style="background:#F2B233"></span>EMA5</button>
+    <button class="on" data-s="ema20"><span class="sw" style="background:#3DD68C"></span>EMA20</button>
+    <button data-s="sma60"><span class="sw" style="background:#C792EA"></span>SMA60</button>
+    <button class="on" data-s="sma180"><span class="sw" style="background:#FF5A4D"></span>SMA180</button>
+    <button data-s="sar"><span class="sw" style="background:#9aa7bd"></span>SAR</button>
+    <button class="on" data-s="vol"><span class="sw" style="background:#3DD68C"></span>거래량</button>
+    <button class="on" data-s="sig"><span class="sw" style="background:#6AA9FF"></span>매매신호</button>
   </div>
   <div class="main">
     <div class="charts">
@@ -304,9 +304,9 @@
   </footer>
 </div>
 <script>
-const C={ink:'#F2EEE7',grid:'#221D18',border:'#2E2823',
-  up:'#E7E1D6',down:'#DB3B34',steel:'#DB3B34',amber:'#C9A86A',purple:'#8A7F70',faint:'#6B6359',
-  go:'#E7E1D6',bb:'#BDB6A8',cream:'#EDE7DC'};
+const C={ink:'#EAEEF6',grid:'#1E2632',border:'#2B3442',
+  up:'#3DD68C',down:'#FF5A4D',steel:'#6AA9FF',amber:'#F2B233',purple:'#C792EA',faint:'#9aa7bd',
+  go:'#3DD68C',bb:'#6AA9FF',cream:'#EAEEF6'};
 const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:22,vixRed:30,fngHot:80,ceilG:100,ceilA:55,ceilR:25};
 function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
@@ -333,8 +333,8 @@ function makeCharts(){
   vol.priceScale().applyOptions({scaleMargins:{top:0.82,bottom:0}});
   const line=(color,w,extra)=>priceChart.addLineSeries(Object.assign({color,lineWidth:w||1.5,
     priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},extra||{}));
-  S.bb_upper=line(C.bb,1); S.bb_mid=line(C.bb,1,{lineStyle:2}); S.bb_lower=line(C.bb,1);
-  S.ema5=line(C.amber,1.5); S.ema20=line(C.cream,1.5); S.sma60=line(C.purple,1.5); S.sma180=line(C.down,1.5);
+  S.bb_upper=line(C.steel,1); S.bb_mid=line(C.steel,1,{lineStyle:2}); S.bb_lower=line(C.steel,1);
+  S.ema5=line(C.amber,1.5); S.ema20=line(C.up,1.5); S.sma60=line(C.purple,1.5); S.sma180=line(C.down,1.5);
   S.sar=priceChart.addLineSeries({color:C.faint,lineWidth:1,lineVisible:false,
     pointMarkersVisible:true,pointMarkersRadius:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
   oscChart=LightweightCharts.createChart(document.getElementById('osc'),{...common,height:170});
@@ -592,7 +592,7 @@ function makeBtChart(){
     layout:{background:{color:'transparent'},textColor:C.ink,fontFamily:"'JetBrains Mono',monospace"},
     grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
     rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:200});
-  btSeries=btChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(219,59,52,.25)',bottomColor:'rgba(219,59,52,.02)',lineWidth:2,priceLineVisible:false});
+  btSeries=btChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(106,169,255,.25)',bottomColor:'rgba(106,169,255,.02)',lineWidth:2,priceLineVisible:false});
   window.addEventListener('resize',()=>btChart&&btChart.applyOptions({width:document.getElementById('btEquity').clientWidth}));
 }
 function statCard(v,label,signed){
@@ -774,7 +774,7 @@ function renderDrawList(){
   el.innerHTML=state.draw.items.map((it,i)=>{
     const c=it.color||(it.type==='hline'?C.amber:C.steel);
     const lab=it.type==='hline'?('수평 $'+it.price):('추세 '+it.p1.price+'→'+it.p2.price);
-    const sel=i===state.draw.sel?' style="background:rgba(219,59,52,.10);border-radius:6px"':'';
+    const sel=i===state.draw.sel?' style="background:rgba(106,169,255,.10);border-radius:6px"':'';
     return '<div class="di"'+sel+'><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-i="'+i+'">×</button></div>';
   }).join('');
   el.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
@@ -806,27 +806,31 @@ document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
   selectTool(m);
 });
 
-/* ---------- 오리지널 마스코트 (표정 = 진입 비중) ---------- */
+/* ---------- 오리지널 마스코트: 파란 양갈래 소녀 (표정/밝기 = 진입 비중) ---------- */
 function faceSVG(m){
   m=Math.max(0,Math.min(1,m));
-  const lit=Math.round(70+m*170);                 // 어두움(70)~밝음(240)
-  const face='rgb('+lit+','+Math.round(lit*0.96)+','+Math.round(lit*0.90)+')';
-  const cy=34, amp=(m-0.5)*15;                    // +면 미소, -면 찡그림
-  const mouth='M22 '+cy+' Q32 '+(cy+amp)+' 42 '+cy;
-  const eyeY = m<0.3?29:27;                        // 시무룩하면 눈 처짐
-  const cheek=(0.15+m*0.6).toFixed(2);
+  const hair='#6AA9FF', hairD='#3F77CC', skin='#F4CDA6', eye='#2A3340', cheek='#FF7E8E';
+  const bright=(0.55+m*0.45).toFixed(2);
+  const ch=(0.2+m*0.6).toFixed(2);
+  const amp=(m-0.5)*12;                          // +면 미소, -면 시무룩
+  const mouth='M27 38 Q32 '+(38+amp)+' 37 38';
   return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 60' style='width:100%;height:100%'>"
-    +"<circle cx='32' cy='30' r='18' fill='"+face+"'/>"
-    +"<circle cx='25' cy='"+eyeY+"' r='2.7' fill='#1a1512'/><circle cx='39' cy='"+eyeY+"' r='2.7' fill='#1a1512'/>"
-    +"<circle cx='20' cy='34' r='3' fill='#DB3B34' opacity='"+cheek+"'/>"
-    +"<circle cx='44' cy='34' r='3' fill='#DB3B34' opacity='"+cheek+"'/>"
-    +"<path d='"+mouth+"' stroke='#DB3B34' stroke-width='3' fill='none' stroke-linecap='round'/></svg>";
+    +"<g opacity='"+bright+"'>"
+    +"<ellipse cx='12' cy='34' rx='7' ry='12' fill='"+hair+"'/><ellipse cx='52' cy='34' rx='7' ry='12' fill='"+hair+"'/>"
+    +"<circle cx='18' cy='27' r='3' fill='"+hairD+"'/><circle cx='46' cy='27' r='3' fill='"+hairD+"'/>"
+    +"<circle cx='32' cy='31' r='14' fill='"+skin+"'/>"
+    +"<path d='M18 28 Q19 13 32 12 Q45 13 46 28 Q40 21 32 22 Q24 21 18 28 Z' fill='"+hair+"'/>"
+    +"<circle cx='27' cy='31' r='2.4' fill='"+eye+"'/><circle cx='37' cy='31' r='2.4' fill='"+eye+"'/>"
+    +"<circle cx='23' cy='36' r='2.6' fill='"+cheek+"' opacity='"+ch+"'/>"
+    +"<circle cx='41' cy='36' r='2.6' fill='"+cheek+"' opacity='"+ch+"'/>"
+    +"<path d='"+mouth+"' stroke='#C8506A' stroke-width='2.4' fill='none' stroke-linecap='round'/>"
+    +"</g></svg>";
 }
 function setFavicon(){
   let l=document.querySelector("link[rel='icon']");
   if(!l){l=document.createElement('link');l.rel='icon';document.head.appendChild(l);}
   l.type='image/svg+xml';
-  l.href='data:image/svg+xml,'+encodeURIComponent(faceSVG(0.7));
+  l.href='data:image/svg+xml,'+encodeURIComponent(faceSVG(0.85));
 }
 
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
