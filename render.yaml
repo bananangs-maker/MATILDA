@@ -9,3 +9,5 @@ services:
     envVars:
       - key: USE_MOCK
         value: "false"
+      - key: TWELVEDATA_API_KEY
+        sync: false      # 값은 Render 대시보드에서 직접 입력 (repo에 저장 안 됨)

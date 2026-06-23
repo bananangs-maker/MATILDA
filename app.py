@@ -38,11 +38,21 @@ def mock_ohlcv(ticker: str, n: int = 500) -> pd.DataFrame:
                          "low": low, "close": close, "volume": vol})
 
 
+import time
+_CACHE = {}          # ticker -> (df, source, fetched_at)
+_TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 후 빠른 응답)
+
+
 def _load(ticker):
     if USE_MOCK:
         return mock_ohlcv(ticker), "MOCK (합성 데이터)"
+    hit = _CACHE.get(ticker)
+    if hit and time.time() - hit[2] < _TTL:
+        return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    return daily_ohlcv(ticker, yrange="2y")
+    df, source = daily_ohlcv(ticker, yrange="2y")
+    _CACHE[ticker] = (df, source, time.time())
+    return df, source
 
 
 @app.route("/")

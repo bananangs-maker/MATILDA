@@ -1,66 +1,43 @@
 # 내 전용 차트 — 레버리지 ETF (Render 배포판)
 
-TQQQ·SOXL 공개 시세를 받아 캔들 차트 + 지표(볼린저·EMA·SAR·거래량 + RSI/MACD/MFI/CCI) +
-티어 기반 매매 의사결정 패널을 보여주는 웹앱. Render에 올리면 URL만으로 접속됩니다.
+TQQQ·SOXL 시세를 받아 캔들 차트 + 지표 + 티어 기반 매매 의사결정 패널을 보여주는 웹앱.
 
-- **API 키·증권사 계좌 불필요** (공개 시세만 사용)
-- 서버가 HTML·데이터를 같은 도메인에서 서빙 → **CORS 없음**
-- 데이터: Yahoo Finance → 실패 시 Stooq 자동 폴백 → 둘 다 막히면 합성(MOCK)
+- 데이터: **Twelve Data**(무료, 클라우드에서 안정적) → 실패 시 Stooq → 합성(MOCK)
+- 서버가 HTML·데이터를 같은 도메인에서 서빙 → CORS 없음
+- 지연/일봉 데이터로 충분 (볼린저·이평 기반 판단)
 
----
+## 데이터 키 발급 (필수 · 무료)
 
-## A. GitHub에 올리기
+Render 같은 클라우드는 Yahoo/Stooq 직접 스크래핑이 차단되므로 정식 무료 API를 씁니다.
 
-```bash
-cd my_chart
-git init
-git add .
-git commit -m "my chart"
-# GitHub에서 빈 repo 생성 후:
-git remote add origin https://github.com/<본인>/my-chart.git
-git branch -M main
-git push -u origin main
-```
+1. https://twelvedata.com 가입 (무료)
+2. 대시보드에서 **API Key** 복사 (무료 800회/일)
+3. 이 키를 Render 환경변수 `TWELVEDATA_API_KEY` 에 넣습니다 (아래 배포 단계 참고)
 
-`.gitignore`가 `.env`를 제외하므로 비밀값이 올라갈 일은 없습니다(이 앱은 키 자체가 없음).
+## GitHub → Render 배포
 
-## B. Render에서 배포
+1. `my_chart` 파일들을 GitHub repo에 올림
+2. Render → **New → Blueprint** → repo 선택 → `render.yaml` 자동 인식 → **Deploy**
+3. 배포 후 **Render 서비스 → Environment** 에서:
+   - `TWELVEDATA_API_KEY` = (발급받은 키)
+   - `USE_MOCK` = `false`  (기본값)
+   - 저장하면 자동 재배포
+4. `https://<이름>.onrender.com/health` 가 `{"ok": true}` 면 정상
 
-### 방법 1 — Blueprint (render.yaml 자동 인식)
-1. Render 대시보드 → **New → Blueprint**
-2. 위 GitHub repo 선택 → `render.yaml`을 자동으로 읽어 설정 완료 → **Apply**
+> 코드를 고쳐서 다시 올리면(같은 파일명으로 업로드/푸시) Render가 자동 재배포합니다.
 
-### 방법 2 — 수동 (Web Service)
-1. Render → **New → Web Service** → GitHub repo 연결
-2. 설정값:
-   - **Runtime**: Python 3
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT`
-   - **Plan**: Free
-   - **Health Check Path**: `/health`
-3. (선택) Environment에 `USE_MOCK = false` 추가 (기본값도 false)
-4. **Create Web Service** → 빌드 끝나면 `https://<이름>.onrender.com` 발급
+## 알아둘 점
 
-## C. 확인
-- `https://<이름>.onrender.com/health` → `{"ok": true, ...}` 면 서버 정상
-- 루트 URL 접속 → 차트가 떠야 함
+- **콜드 스타트**: 무료 플랜은 15분 무접속 후 슬립 → 다음 접속 시 30~50초 기동(정상).
+- **호출 절약**: 서버가 종목별 10분 캐시를 둬서 무료 한도(800/일)를 거의 안 씁니다.
+- **키 없이 화면만 확인**: Render 환경변수에서 `USE_MOCK=true` 로 두면 합성 데이터로 동작.
 
----
-
-## 알아둘 점 (Render 무료 플랜)
-
-- **콜드 스타트**: 15분 무접속 시 슬립 → 다음 접속 시 30~50초 기동 지연(정상).
-- **Yahoo 차단 가능성**: 클라우드 IP라 Yahoo가 가끔 429로 막을 수 있습니다.
-  그러면 자동으로 **Stooq로 폴백**합니다(일봉엔 충분). 그래도 데이터가 안 오면
-  잠시 후 재시도하거나, 배포 자체가 잘 됐는지 확인하려면 Render 환경변수에서
-  `USE_MOCK=true`로 잠깐 바꿔 합성 데이터로 화면을 확인하세요.
-- **지연/일봉 데이터**라 볼린저·이평 기반 판단엔 영향 없습니다.
-
-## 로컬에서도 돌리려면
+## 로컬 실행 (선택)
 ```bash
 pip install -r requirements.txt
-cp .env.example .env
-python app.py          # http://localhost:8000
+echo "TWELVEDATA_API_KEY=발급받은키" > .env
+echo "USE_MOCK=false" >> .env
+python app.py        # http://localhost:8000
 ```
 
 ## 자동 vs 수동 입력
@@ -73,12 +50,11 @@ python app.py          # http://localhost:8000
 ## 파일
 | 파일 | 역할 |
 |---|---|
-| `app.py` | Flask 앱 (대시보드 + /chart, gunicorn 진입점 `app:app`) |
-| `public_data.py` | 공개 시세 수집 (Yahoo → Stooq) |
+| `app.py` | Flask 앱 (대시보드 + /chart, 캐시, gunicorn 진입점 `app:app`) |
+| `public_data.py` | 시세 수집 (Twelve Data → Stooq) |
 | `indicators.py` | OHLCV → 차트 시리즈 + 의사결정 신호 |
 | `dashboard.html` | 차트 UI + 의사결정 패널 |
 | `render.yaml` | Render Blueprint 설정 |
-| `requirements.txt` | 의존성 (gunicorn 포함) |
 
 > 면허 있는 투자 자문이 아니며, 본 도구는 사용자의 매매 규칙을 정리·자동화하는 보조 장치입니다.
 > 투자 판단과 결과의 책임은 전적으로 사용자에게 있습니다.
