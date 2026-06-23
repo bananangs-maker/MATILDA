@@ -138,6 +138,19 @@
   .stat .l{font-size:10.5px;color:var(--muted);margin-top:3px}
   #btEquity{height:200px;margin-top:6px}
   .btnote{font-size:11px;color:var(--faint);margin-top:10px;line-height:1.5}
+  .drawbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .drawbar button{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--panel2);
+    border:1px solid var(--border);border-radius:7px;padding:6px 11px;cursor:pointer;transition:.12s}
+  .drawbar button.on{color:#0a0e14;background:var(--steel);border-color:var(--steel);font-weight:700}
+  .drawbar .ds{font-family:var(--mono);font-size:11px;color:var(--caution);margin-left:4px}
+  .dlist{margin-top:8px}
+  .dlist .di{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--panel2);font-size:11.5px}
+  .dlist .di:first-child{border-top:none}
+  .dlist .di .sw{width:9px;height:9px;border-radius:2px}
+  .dlist .di .lab{font-family:var(--mono);color:var(--ink)}
+  .dlist .di .del{margin-left:auto;cursor:pointer;color:var(--faint);background:none;border:none;font-size:14px}
+  .dlist .di .del:hover{color:var(--stop)}
+  .dlist .dempty{color:var(--faint);font-family:var(--mono);font-size:11px;padding:4px 0}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -164,6 +177,14 @@
   </div>
   <div class="main">
     <div class="charts">
+      <div class="drawbar" id="drawbar">
+        <button class="on" data-m="cursor">커서</button>
+        <button data-m="hline">수평선(지지/저항)</button>
+        <button data-m="trend">추세선</button>
+        <button data-m="_undo">마지막 삭제</button>
+        <button data-m="_clear">전체 삭제</button>
+        <span class="ds" id="drawStatus"></span>
+      </div>
       <div id="price"></div>
       <div class="osc-tabs" id="osc-tabs">
         <button class="on" data-o="rsi">RSI(14)</button>
@@ -232,6 +253,10 @@
         <div class="btnote" id="sentiNote">↻ 갱신을 누르면 CNN에서 자동으로 가져옵니다.</div>
       </div>
       <div class="card">
+        <div class="lab">그리기 목록 <span id="drawSync" style="float:right;font-size:9.5px;color:var(--faint)">로컬 저장</span></div>
+        <div class="dlist" id="dlist"></div>
+      </div>
+      <div class="card">
         <div class="lab">신호 충돌 · 경고</div>
         <div class="flags" id="flags"></div>
       </div>
@@ -284,6 +309,7 @@ const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
+  drawMode:'cursor', draw:{items:[],refs:[],pending:null},
   journal:loadLS('matilda_journal',[])};
 let priceChart,oscChart,candle,vol,S={},oscSeries={},syncing=false;
 let btChart=null,btSeries=null;
@@ -309,6 +335,23 @@ function makeCharts(){
   const sync=(src,dst)=>src.timeScale().subscribeVisibleLogicalRangeChange(r=>{
     if(syncing||!r)return; syncing=true; dst.timeScale().setVisibleLogicalRange(r); syncing=false;});
   sync(priceChart,oscChart); sync(oscChart,priceChart);
+  priceChart.subscribeClick(param=>{
+    if(state.drawMode==='cursor'||!param.point||param.time===undefined)return;
+    const price=candle.coordinateToPrice(param.point.y);
+    if(price==null)return;
+    if(state.drawMode==='hline'){
+      state.draw.items.push({id:Date.now()+'',type:'hline',price:Math.round(price*100)/100,color:C.amber});
+      saveDrawings();redrawDrawings();
+    }else if(state.drawMode==='trend'){
+      if(!state.draw.pending){state.draw.pending={time:param.time,price};setDrawStatus('두 번째 점을 클릭하세요');}
+      else{
+        state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,
+          p1:{time:state.draw.pending.time,price:Math.round(state.draw.pending.price*100)/100},
+          p2:{time:param.time,price:Math.round(price*100)/100}});
+        state.draw.pending=null;setDrawStatus('');saveDrawings();redrawDrawings();
+      }
+    }
+  });
   window.addEventListener('resize',()=>{
     priceChart.applyOptions({width:document.getElementById('price').clientWidth});
     oscChart.applyOptions({width:document.getElementById('osc').clientWidth});});
@@ -359,7 +402,7 @@ async function load(){
     const d=await res.json();
     if(!res.ok||d.error) throw new Error(d.error||'서버 오류');
     state.data=d; state.signals=d.signals; state.markers=d.markers||[];
-    renderPrice(d); renderOsc(); decide();
+    renderPrice(d); renderOsc(); decide(); loadDrawings();
     var cp=document.getElementById('cPress'); if(cp&&d.signals)cp.textContent=d.signals.pressure;
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
@@ -589,6 +632,60 @@ async function runBacktest(){
   }finally{ btn.disabled=false; btn.textContent='백테스트 실행'; }
 }
 document.getElementById('btRun').onclick=runBacktest;
+
+/* ---------- 그리기 도구 (추세선 / 수평 지지·저항) ---------- */
+function setDrawStatus(t){document.getElementById('drawStatus').textContent=t;}
+function clearDrawRefs(){
+  state.draw.refs.forEach(r=>{try{ if(r.kind==='hline')candle.removePriceLine(r.obj); else priceChart.removeSeries(r.obj);}catch(e){}});
+  state.draw.refs=[];
+}
+function redrawDrawings(){
+  if(!candle)return; clearDrawRefs();
+  state.draw.items.forEach(it=>{
+    if(it.type==='hline'){
+      const pl=candle.createPriceLine({price:it.price,color:it.color||C.amber,lineWidth:1,lineStyle:0,axisLabelVisible:true,title:'S/R'});
+      state.draw.refs.push({kind:'hline',obj:pl});
+    }else if(it.type==='trend'&&it.p1&&it.p2){
+      const ls=priceChart.addLineSeries({color:it.color||C.steel,lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      const pts=[{time:it.p1.time,value:it.p1.price},{time:it.p2.time,value:it.p2.price}].sort((a,b)=>a.time<b.time?-1:1);
+      try{ls.setData(pts);}catch(e){}
+      state.draw.refs.push({kind:'trend',obj:ls});
+    }
+  });
+  renderDrawList();
+}
+function renderDrawList(){
+  const el=document.getElementById('dlist');
+  if(!state.draw.items.length){el.innerHTML='<div class="dempty">없음 — 도구를 골라 차트를 클릭하세요.</div>';return;}
+  el.innerHTML=state.draw.items.map(it=>{
+    const c=it.color||(it.type==='hline'?C.amber:C.steel);
+    const lab=it.type==='hline'?('수평 $'+it.price):('추세 '+it.p1.price+'→'+it.p2.price);
+    return '<div class="di"><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-id="'+it.id+'">×</button></div>';
+  }).join('');
+  el.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
+    state.draw.items=state.draw.items.filter(x=>x.id!=b.dataset.id);saveDrawings();redrawDrawings();});
+}
+async function saveDrawings(){
+  saveLS('matilda_draw_'+state.ticker,state.draw.items);
+  try{await fetch('/drawings/'+state.ticker,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({drawings:state.draw.items})});}catch(e){}
+}
+async function loadDrawings(){
+  let items=loadLS('matilda_draw_'+state.ticker,[]);
+  try{
+    const r=await (await fetch('/drawings/'+state.ticker)).json();
+    if(r.configured){document.getElementById('drawSync').textContent='클라우드 저장(Supabase)';
+      if(Array.isArray(r.drawings)&&r.drawings.length)items=r.drawings;}
+  }catch(e){}
+  state.draw.items=items;state.draw.pending=null;setDrawStatus('');redrawDrawings();
+}
+document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
+  const m=b.dataset.m;
+  if(m==='_clear'){state.draw.items=[];state.draw.pending=null;saveDrawings();redrawDrawings();return;}
+  if(m==='_undo'){state.draw.items.pop();state.draw.pending=null;saveDrawings();redrawDrawings();return;}
+  state.drawMode=m;state.draw.pending=null;setDrawStatus(m==='hline'?'차트를 클릭해 수평선을 추가':m==='trend'?'시작점을 클릭하세요':'');
+  document.querySelectorAll('#drawbar button[data-m="cursor"],#drawbar button[data-m="hline"],#drawbar button[data-m="trend"]').forEach(x=>x.classList.toggle('on',x.dataset.m===m));
+});
 
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 if(makeCharts()){load();fetchSentiment();}

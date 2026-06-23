@@ -69,3 +69,33 @@ python app.py        # http://localhost:8000
 
 > 주의: 풋콜·VIX 컴포넌트는 CNN의 0~100 정규화 점수이며, 압력은 호가 데이터가 아닌 거래량 프록시입니다.
 > 차트 패턴 자동인식·엘리엇 파동은 신뢰도 문제로 미포함입니다.
+
+
+## v3 — 그리기 도구 + 저장
+
+차트 위 툴바: **커서 / 수평선(지지·저항) / 추세선 / 마지막 삭제 / 전체 삭제**.
+- 수평선: 도구 선택 후 차트를 한 번 클릭 → 그 가격에 지지/저항선.
+- 추세선: 도구 선택 후 시작점·끝점 두 번 클릭 → 2점 추세선.
+- 우측 "그리기 목록"에서 개별 삭제 가능. 종목(TQQQ/SOXL)별로 따로 저장됩니다.
+
+### 저장 방식 (2단계)
+1. **기본(설정 불필요)**: 그린 선은 이 **브라우저(localStorage)**에 저장 → 한 기기에선 트레이딩뷰처럼 유지.
+2. **Supabase 연동(선택, 기기 간 동기화)**: 아래만 하면 자동으로 클라우드 저장으로 승격됩니다.
+
+### Supabase 켜는 법
+1. Supabase 프로젝트 → SQL Editor에서 테이블 생성:
+   ```sql
+   create table if not exists chart_drawings (
+     ticker text primary key,
+     drawings jsonb default '[]'::jsonb,
+     updated_at timestamptz default now()
+   );
+   ```
+2. Supabase → Project Settings → API 에서 **Project URL**과 **service_role 키** 복사.
+3. Render → 서비스 → Environment 에 추가:
+   - `SUPABASE_URL` = 프로젝트 URL (예: https://xxxx.supabase.co)
+   - `SUPABASE_SERVICE_KEY` = service_role 키
+4. 저장 → 자동 재배포. 이후 그린 선이 Supabase에 저장되어 다른 기기에서도 보입니다.
+
+> service_role 키는 **서버(Render)에만** 두고 브라우저엔 노출하지 않습니다(이 앱이 그렇게 설계됨). 키는 외부 공개 금지.
+> Supabase 미설정이거나 오류 시 자동으로 localStorage로 폴백하므로 그리기는 항상 작동합니다.

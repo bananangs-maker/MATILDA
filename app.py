@@ -11,13 +11,19 @@ MOCK:  환경변수 USE_MOCK=true 이면 합성 데이터.
 import os
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 from dotenv import load_dotenv
 
 from indicators import compute_signals, compute_series
 
 load_dotenv()
 USE_MOCK = os.environ.get("USE_MOCK", "false").lower() == "true"
+SUPA_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPA_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "") or os.environ.get("SUPABASE_KEY", "")
+
+
+def _supa_enabled():
+    return bool(SUPA_URL and SUPA_KEY)
 
 app = Flask(__name__, static_folder=None)
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -110,6 +116,34 @@ def sentiment_route():
         return jsonify(cnn_sentiment())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/drawings/<ticker>", methods=["GET", "POST"])
+def drawings(ticker):
+    ticker = ticker.upper()
+    if not _supa_enabled():
+        # Supabase 미설정 -> 클라이언트가 localStorage 사용
+        return jsonify({"configured": False, "drawings": []})
+    import requests as rq
+    headers = {"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}",
+               "Content-Type": "application/json"}
+    base = f"{SUPA_URL}/rest/v1/chart_drawings"
+    try:
+        if request.method == "GET":
+            r = rq.get(base, params={"ticker": f"eq.{ticker}", "select": "drawings"},
+                       headers=headers, timeout=10)
+            r.raise_for_status()
+            rows = r.json()
+            return jsonify({"configured": True,
+                            "drawings": rows[0]["drawings"] if rows else []})
+        body = request.get_json(force=True) or {}
+        payload = [{"ticker": ticker, "drawings": body.get("drawings", [])}]
+        r = rq.post(base, json=payload,
+                    headers={**headers, "Prefer": "resolution=merge-duplicates"}, timeout=10)
+        r.raise_for_status()
+        return jsonify({"configured": True, "ok": True})
+    except Exception as e:
+        return jsonify({"configured": True, "error": str(e)}), 500
 
 
 @app.route("/health")
