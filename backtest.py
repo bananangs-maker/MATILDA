@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 from indicators import macd
 
-UP = "#3DD68C"
-DN = "#FF5A4D"
+UP = "#E7E1D6"
+DN = "#DB3B34"
 
 
 def generate_signals(df: pd.DataFrame, trend_ma: int = 200):

@@ -317,9 +317,9 @@ def compute_series(df: pd.DataFrame) -> dict:
     for i in range(len(df)):
         c_up = df["close"][i] >= df["open"][i]
         vol.append({"time": dates[i], "value": float(df["volume"][i]),
-                    "color": "rgba(61,214,140,.45)" if c_up else "rgba(255,90,77,.45)"})
+                    "color": "rgba(231,225,214,.40)" if c_up else "rgba(219,59,52,.45)"})
 
-    hist_color = lambda v: ("#3DD68C" if v >= 0 else "#FF5A4D")
+    hist_color = lambda v: ("#E7E1D6" if v >= 0 else "#DB3B34")
     return {
         "candles": candles,
         "volume": vol,
