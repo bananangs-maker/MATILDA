@@ -220,6 +220,10 @@
     <button data-s="sar"><span class="sw" style="background:#9aa7bd"></span>SAR</button>
     <button class="on" data-s="vol"><span class="sw" style="background:#3DD68C"></span>거래량</button>
     <button class="on" data-s="sig"><span class="sw" style="background:#6AA9FF"></span>매매신호</button>
+    <button data-s="vwap"><span class="sw" style="background:#E0A458"></span>VWAP</button>
+    <button data-s="ichi"><span class="sw" style="background:#26C6DA"></span>일목구름</button>
+    <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
+    <button data-s="donch"><span class="sw" style="background:#9aa7bd"></span>Donchian</button>
   </div>
   <div class="main">
     <div class="charts">
@@ -239,6 +243,10 @@
         <button data-o="mfi">MFI(14)</button>
         <button data-o="cci">CCI(20)</button>
         <button data-o="obv">OBV</button>
+        <button data-o="adx">ADX/DI</button>
+        <button data-o="stoch">스토캐스틱</button>
+        <button data-o="cmf">CMF</button>
+        <button data-o="willr">Williams %R</button>
       </div>
       <div id="osc"></div>
     </div>
@@ -401,7 +409,8 @@ const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:20,vixRed:28,fn
 function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
-  toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true},
+  toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
+           vwap:false,ichi:false,kelt:false,donch:false},
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
@@ -427,6 +436,11 @@ function makeCharts(){
   S.ema5=line(C.amber,1.5); S.ema20=line(C.up,1.5); S.sma60=line(C.purple,1.5); S.sma180=line(C.down,1.5);
   S.sar=priceChart.addLineSeries({color:C.faint,lineWidth:1,lineVisible:false,
     pointMarkersVisible:true,pointMarkersRadius:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  S.vwap=line('#E0A458',1.5);
+  S.kelt_up=line('#7FB3FF',1,{lineStyle:2}); S.kelt_low=line('#7FB3FF',1,{lineStyle:2});
+  S.donch_up=line('#9aa7bd',1); S.donch_low=line('#9aa7bd',1);
+  S.ichi_conv=line('#26C6DA',1.2); S.ichi_base=line('#EF5350',1.2);
+  S.ichi_spanA=line('#66BB6A',1); S.ichi_spanB=line('#AB47BC',1);
   oscChart=LightweightCharts.createChart(document.getElementById('osc'),{...common,height:170});
   const sync=(src,dst)=>src.timeScale().subscribeVisibleLogicalRangeChange(r=>{
     if(syncing||!r)return; syncing=true; dst.timeScale().setVisibleLogicalRange(r); syncing=false;});
@@ -443,6 +457,10 @@ function applyToggles(){
   S.bb_mid.applyOptions({visible:state.toggles.bb});
   S.bb_lower.applyOptions({visible:state.toggles.bb});
   ['ema5','ema20','sma60','sma180','sar'].forEach(k=>S[k].applyOptions({visible:state.toggles[k]}));
+  S.vwap.applyOptions({visible:state.toggles.vwap});
+  [S.kelt_up,S.kelt_low].forEach(s=>s.applyOptions({visible:state.toggles.kelt}));
+  [S.donch_up,S.donch_low].forEach(s=>s.applyOptions({visible:state.toggles.donch}));
+  [S.ichi_conv,S.ichi_base,S.ichi_spanA,S.ichi_spanB].forEach(s=>s.applyOptions({visible:state.toggles.ichi}));
   vol.applyOptions({visible:state.toggles.vol});
   if(candle)candle.setMarkers(state.toggles.sig?state.markers:[]);
 }
@@ -450,7 +468,13 @@ function renderPrice(d){
   candle.setData(d.candles); vol.setData(d.volume);
   S.bb_upper.setData(d.bb_upper); S.bb_mid.setData(d.bb_mid); S.bb_lower.setData(d.bb_lower);
   S.ema5.setData(d.ema5); S.ema20.setData(d.ema20); S.sma60.setData(d.sma60); S.sma180.setData(d.sma180);
-  S.sar.setData(d.sar); applyToggles(); applyTimeframe();
+  S.sar.setData(d.sar);
+  if(d.vwap)S.vwap.setData(d.vwap);
+  if(d.kelt_up){S.kelt_up.setData(d.kelt_up);S.kelt_low.setData(d.kelt_low);}
+  if(d.donch_up){S.donch_up.setData(d.donch_up);S.donch_low.setData(d.donch_low);}
+  if(d.ichi_conv){S.ichi_conv.setData(d.ichi_conv);S.ichi_base.setData(d.ichi_base);
+    S.ichi_spanA.setData(d.ichi_spanA);S.ichi_spanB.setData(d.ichi_spanB);}
+  applyToggles(); applyTimeframe();
 }
 function renderOsc(){
   Object.values(oscSeries).forEach(s=>oscChart.removeSeries(s)); oscSeries={};
@@ -461,6 +485,10 @@ function renderOsc(){
   else if(state.osc==='mfi'){oscSeries.m=addLine(d.mfi,C.amber);ref(oscSeries.m,80,C.down);ref(oscSeries.m,20,C.up);}
   else if(state.osc==='cci'){oscSeries.m=addLine(d.cci,C.purple);ref(oscSeries.m,100,C.down);ref(oscSeries.m,-100,C.up);}
   else if(state.osc==='obv'){oscSeries.m=addLine(d.obv,C.go);}
+  else if(state.osc==='adx'){oscSeries.a=addLine(d.adx,C.ink,1.8);oscSeries.p=addLine(d.pdi,C.up,1.2);oscSeries.n=addLine(d.mdi,C.down,1.2);ref(oscSeries.a,25,C.faint);ref(oscSeries.a,20,C.faint);}
+  else if(state.osc==='stoch'){oscSeries.k=addLine(d.stoch_k,C.steel,1.5);oscSeries.d=addLine(d.stoch_d,C.amber,1.2);ref(oscSeries.k,80,C.down);ref(oscSeries.k,20,C.up);}
+  else if(state.osc==='cmf'){oscSeries.m=addLine(d.cmf,C.purple);ref(oscSeries.m,0,C.faint);}
+  else if(state.osc==='willr'){oscSeries.m=addLine(d.willr,C.steel);ref(oscSeries.m,-20,C.down);ref(oscSeries.m,-80,C.up);}
   else if(state.osc==='macd'){
     oscSeries.h=oscChart.addHistogramSeries({priceLineVisible:false,lastValueVisible:false});
     oscSeries.h.setData(d.macd_hist);
