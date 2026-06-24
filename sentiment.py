@@ -58,8 +58,8 @@ FNG_INDICATORS = [
 ]
 
 
-def fng_full(days: int = 180) -> dict:
-    """CNN 공포탐욕: OVERVIEW + TIMELINE + 7개 구성 지표 (각 score·rating·미니 시계열)."""
+def fng_full(days: int = 365) -> dict:
+    """CNN 공포탐욕: OVERVIEW + TIMELINE + 7개 구성 지표 (각 score·rating)."""
     r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
                      headers=UA, timeout=12)
     r.raise_for_status()
@@ -81,7 +81,6 @@ def fng_full(days: int = 180) -> dict:
             "key": key, "name": name, "desc": desc,
             "score": round(float(sc), 1) if sc is not None else None,
             "rating": o.get("rating"),
-            "spark": _series(j, key, 90),
         })
     return {"overview": overview, "timeline": _series(j, "fear_and_greed_historical", days),
             "indicators": indicators}

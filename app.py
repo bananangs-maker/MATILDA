@@ -220,9 +220,9 @@ def fng_full_route():
     if USE_MOCK:
         import math, datetime, random
         base = datetime.date.today()
-        def mkser(seed):
+        def mkser(seed, days=90):
             r = random.Random(seed); out = []
-            for i in range(90, 0, -1):
+            for i in range(days, 0, -1):
                 d = (base - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
                 out.append({"time": d, "value": round(max(2, min(98, 50 + 30 * math.sin(i / 15.0 + seed) + r.uniform(-6, 6))), 1)})
             return out
@@ -231,11 +231,11 @@ def fng_full_route():
                  ("시장 변동성", "VIX"), ("정크본드 수요", "고수익채 스프레드"), ("안전자산 수요", "주식 vs 국채")]
         rate = lambda v: "extreme greed" if v >= 75 else "greed" if v >= 55 else "neutral" if v >= 45 else "fear" if v >= 25 else "extreme fear"
         inds = [{"key": "k%d" % i, "name": n, "desc": de, "score": mkser(i)[-1]["value"],
-                 "rating": rate(mkser(i)[-1]["value"]), "spark": mkser(i)} for i, (n, de) in enumerate(names)]
-        ts = mkser(99)
+                 "rating": rate(mkser(i)[-1]["value"])} for i, (n, de) in enumerate(names)]
+        ts = mkser(99, 365)
         return jsonify({"overview": {"score": ts[-1]["value"], "rating": rate(ts[-1]["value"]),
                         "prev_close": ts[-2]["value"], "prev_week": ts[-6]["value"],
-                        "prev_month": ts[-31]["value"] if len(ts) > 31 else ts[0]["value"], "prev_year": 41},
+                        "prev_month": ts[-31]["value"], "prev_year": ts[0]["value"]},
                         "timeline": ts, "indicators": inds})
     global _FNGF
     try:
