@@ -49,6 +49,7 @@ _CACHE = {}          # ticker -> (df, source, fetched_at)
 _TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 후 빠른 응답)
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
+_FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
 
 
 def _sentiment_cached():
@@ -211,6 +212,41 @@ def seasonality_route(ticker):
         import seasonality as se
         return jsonify(se.seasonality(df))
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/fng_full")
+def fng_full_route():
+    if USE_MOCK:
+        import math, datetime, random
+        base = datetime.date.today()
+        def mkser(seed):
+            r = random.Random(seed); out = []
+            for i in range(90, 0, -1):
+                d = (base - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+                out.append({"time": d, "value": round(max(2, min(98, 50 + 30 * math.sin(i / 15.0 + seed) + r.uniform(-6, 6))), 1)})
+            return out
+        names = [("시장 모멘텀", "S&P500 vs 125일 이동평균"), ("주가 강도", "52주 신고가 vs 신저가"),
+                 ("주가 폭(breadth)", "상승·하락 거래량"), ("풋·콜 옵션", "5일 풋/콜 비율"),
+                 ("시장 변동성", "VIX"), ("정크본드 수요", "고수익채 스프레드"), ("안전자산 수요", "주식 vs 국채")]
+        rate = lambda v: "extreme greed" if v >= 75 else "greed" if v >= 55 else "neutral" if v >= 45 else "fear" if v >= 25 else "extreme fear"
+        inds = [{"key": "k%d" % i, "name": n, "desc": de, "score": mkser(i)[-1]["value"],
+                 "rating": rate(mkser(i)[-1]["value"]), "spark": mkser(i)} for i, (n, de) in enumerate(names)]
+        ts = mkser(99)
+        return jsonify({"overview": {"score": ts[-1]["value"], "rating": rate(ts[-1]["value"]),
+                        "prev_close": ts[-2]["value"], "prev_week": ts[-6]["value"],
+                        "prev_month": ts[-31]["value"] if len(ts) > 31 else ts[0]["value"], "prev_year": 41},
+                        "timeline": ts, "indicators": inds})
+    global _FNGF
+    try:
+        if _FNGF["data"] is not None and time.time() - _FNGF["ts"] < _TTL:
+            return jsonify(_FNGF["data"])
+        from sentiment import fng_full
+        d = fng_full(); _FNGF["data"] = d; _FNGF["ts"] = time.time()
+        return jsonify(d)
+    except Exception as e:
+        if _FNGF["data"]:
+            return jsonify(_FNGF["data"])
         return jsonify({"error": str(e)}), 500
 
 
