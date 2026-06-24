@@ -45,14 +45,19 @@
     background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:5px 12px;cursor:pointer}
   .osc-tabs button.on{color:var(--ink);border-color:var(--steel);background:rgba(77,136,255,.12)}
   #osc{height:170px}
-  .deck{display:flex;flex-direction:column;gap:12px}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:14px 15px}
+  .deck{display:flex;flex-direction:column;gap:11px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:15px 16px;box-shadow:0 1px 2px rgba(0,0,0,.18);transition:border-color .15s}
+  .card:hover{border-color:#333a48}
   .card.final{background:linear-gradient(180deg,var(--panel2),var(--panel));border-color:var(--steel)}
   @keyframes breathe{0%,100%{opacity:1}50%{opacity:.4}}
   .risk-pulse{animation:breathe 1.15s ease-in-out infinite}
   @keyframes riskglow{0%,100%{box-shadow:inset 0 0 0 1px var(--stop),0 0 0 rgba(242,54,69,0)}50%{box-shadow:inset 0 0 0 1px var(--stop),0 0 20px rgba(242,54,69,.5)}}
   .card.final.risk-on{border-color:var(--stop);animation:riskglow 1.5s ease-in-out infinite}
-  .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
+  .lab{font-family:var(--disp);font-weight:600;font-size:12.5px;letter-spacing:-.01em;color:var(--ink);margin-bottom:9px;display:flex;align-items:center;gap:7px}
+  .lab .hint{font-family:var(--mono);font-weight:400;font-size:9.5px;letter-spacing:0;color:var(--faint);margin-left:auto}
+  .lab > span:last-child{margin-left:auto}
+  .decksep{display:flex;align-items:center;gap:10px;margin:7px 2px 2px;color:var(--faint);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em}
+  .decksep::before,.decksep::after{content:'';flex:1;height:1px;background:var(--border)}
   .final .lab{color:var(--steel)}
   .call{font-family:var(--disp);font-weight:700;font-size:17px;line-height:1.35}
   .detail{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
@@ -345,27 +350,49 @@
         <div class="macrostat" id="macroStat"></div>
         <div class="eng-metrics" id="engMetrics"></div>
       </div>
-      <div class="card">
-        <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
-        <div class="senti" id="fundPrice"></div>
-        <div id="fundExtra"></div>
-      </div>
-      <div class="card">
-        <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
-        <div class="siglist" id="crossList"></div>
-      </div>
-      <div class="card">
-        <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
-        <div class="siglist" id="candleList"></div>
-      </div>
-      <div class="card">
+
+<div class="card">
+        <div class="lab">리스크 티어 <span class="hint">엔진 판정 분해</span></div>
         <div class="row"><span class="k">T0 · 레짐</span><span class="v" id="vRegime">—</span></div>
         <div class="row"><span class="k">T1·T2 · 추세</span><span class="v" id="vTrend">—</span></div>
         <div class="row"><span class="k">T3 · 타이밍</span><span class="v" id="vTiming">—</span></div>
         <div class="bbnote" id="bbnote">—</div>
       </div>
-      <div class="card macro">
-        <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정 가능</span></div>
+
+<div class="card">
+        <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
+        <div class="senti" id="fundPrice"></div>
+        <div id="fundExtra"></div>
+      </div>
+
+<div class="card">
+        <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
+        <div class="siglist" id="candleList"></div>
+      </div>
+
+<div class="card">
+        <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
+        <div class="siglist" id="crossList"></div>
+      </div>
+
+<div class="card">
+        <div class="lab">신호 충돌 · 경고</div>
+        <div class="flags" id="flags"></div>
+      </div>
+
+<div class="card">
+        <div class="lab">시장 심리 (CNN) <span id="sentiBtn" style="float:right;cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
+        <div class="senti" id="senti">
+          <div class="chip"><div class="n" id="cFng">—</div><div class="l" id="cFngR">공포·탐욕</div></div>
+          <div class="chip"><div class="n" id="cPc">—</div><div class="l">풋콜 옵션</div></div>
+          <div class="chip"><div class="n" id="cVix">—</div><div class="l">VIX 변동성</div></div>
+          <div class="chip"><div class="n" id="cPress">—</div><div class="l">매수압력%</div></div>
+        </div>
+        <div class="btnote" id="sentiNote">↻ 갱신을 누르면 CNN에서 자동으로 가져옵니다.</div>
+      </div>
+      <div class="decksep"><span>입력 · 도구</span></div>
+<div class="card macro">
+        <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정(what-if)</span></div>
         <label>VIX <span class="val" id="vixv">18</span>
           <span class="mtag" id="vixTag" style="display:none">수동 <span class="rev" id="vixRev">↻ 자동(<span id="vixAuto">—</span>)</span></span></label>
         <input type="range" id="vix" min="10" max="55" value="18" step="0.5">
@@ -382,7 +409,8 @@
           <button class="minibtn ghost" id="fibClear">지우기</button>
         </div>
       </div>
-      <div class="card">
+
+<div class="card">
         <details id="setBox">
           <summary>지표 임계값 설정</summary>
           <div class="numgrid">
@@ -403,21 +431,13 @@
           <button class="reset" id="setReset">기본값 복원</button>
         </details>
       </div>
-      <div class="card">
-        <div class="lab">시장 심리 (CNN) <span id="sentiBtn" style="float:right;cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
-        <div class="senti" id="senti">
-          <div class="chip"><div class="n" id="cFng">—</div><div class="l" id="cFngR">공포·탐욕</div></div>
-          <div class="chip"><div class="n" id="cPc">—</div><div class="l">풋콜 옵션</div></div>
-          <div class="chip"><div class="n" id="cVix">—</div><div class="l">VIX 변동성</div></div>
-          <div class="chip"><div class="n" id="cPress">—</div><div class="l">매수압력%</div></div>
-        </div>
-        <div class="btnote" id="sentiNote">↻ 갱신을 누르면 CNN에서 자동으로 가져옵니다.</div>
-      </div>
-      <div class="card">
+
+<div class="card">
         <div class="lab">그리기 목록 <span id="drawSync" style="float:right;font-size:9.5px;color:var(--faint)">로컬 저장</span></div>
         <div class="dlist" id="dlist"></div>
       </div>
-      <div class="card">
+
+<div class="card">
         <div class="lab">신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></div>
         <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
           <button class="minibtn" id="alPerm">권한 요청</button>
@@ -437,11 +457,7 @@
         </div>
         <div class="allog" id="alLog"></div>
       </div>
-      <div class="card">
-        <div class="lab">신호 충돌 · 경고</div>
-        <div class="flags" id="flags"></div>
-      </div>
-    </div>
+</div>
   </div>
   <div class="summary">
     <h3>기술 요약 <span class="ssub">오실레이터·이동평균 26개 종합 (트레이딩뷰식 근사)</span></h3>
