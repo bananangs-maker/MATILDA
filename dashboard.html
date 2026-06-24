@@ -50,7 +50,7 @@
     border:1px solid var(--border);border-radius:2px;padding:5px 10px;cursor:pointer;transition:.12s}
   .toggles button.on{color:var(--ink);border-color:var(--steel)}
   .toggles button .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
-  .main{display:grid;grid-template-columns:minmax(0,1.5fr) 600px;gap:12px;align-items:start}
+  .main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:12px;align-items:start}
   @media(max-width:1180px){.main{grid-template-columns:1fr}}
   .charts{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px;overflow:hidden}
   #price{height:440px}
@@ -59,11 +59,13 @@
     background:var(--panel2);border:1px solid var(--border);border-radius:2px;padding:5px 12px;cursor:pointer}
   .osc-tabs button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
   #osc{height:170px}
-  .deck{column-count:2;column-gap:10px}
-  @media(max-width:1180px){.deck{column-count:2}}
-  @media(max-width:640px){.deck{column-count:1}}
-  .deck .card,.deck .decksep{break-inside:avoid;margin-bottom:10px}
-  .deck .card.final,.deck .card.macro,.deck .card.sumcard,.deck #fngCard,.deck .decksep,.deck .card.span2{column-span:all}
+  .deck{display:flex;flex-direction:column;gap:10px}
+  .deckgrid{column-count:4;column-gap:10px;margin-top:12px}
+  @media(max-width:1400px){.deckgrid{column-count:3}}
+  @media(max-width:1000px){.deckgrid{column-count:2}}
+  @media(max-width:640px){.deckgrid{column-count:1}}
+  .deckgrid .card,.deckgrid .decksep{break-inside:avoid;margin-bottom:10px;display:block}
+  .deckgrid .decksep{column-span:all}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:13px 14px;transition:border-color .15s}
   .card:hover{border-color:var(--border2)}
   .card.final{background:var(--panel);border-color:var(--accent)}
@@ -441,7 +443,9 @@
         <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
         <div class="siglist" id="candleList"></div>
       </div>
-
+    </div>
+  </div>
+  <div class="deckgrid">
       <div class="card">
         <div class="lab">차트 패턴 <span class="hint">자동탐지 · 오탐 큼(참고용)</span></div>
         <div class="siglist" id="cpatList"></div>
@@ -548,7 +552,6 @@
         </div>
         <div class="allog" id="alLog"></div>
       </div>
-</div>
   </div>
   <div class="summary">
     <h3>역사적 계절성 <span class="ssub">연도별 연초 대비 누적수익률 — 과거 데이터, 예측 아님</span>
