@@ -50,8 +50,7 @@
     border:1px solid var(--border);border-radius:2px;padding:5px 10px;cursor:pointer;transition:.12s}
   .toggles button.on{color:var(--ink);border-color:var(--steel)}
   .toggles button .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
-  .main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:12px;align-items:start}
-  @media(max-width:1180px){.main{grid-template-columns:1fr}}
+  .main{display:block}
   .charts{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:10px;overflow:hidden}
   #price{height:440px}
   .osc-tabs{display:flex;gap:5px;margin:8px 4px 4px;flex-wrap:wrap}
@@ -59,13 +58,8 @@
     background:var(--panel2);border:1px solid var(--border);border-radius:2px;padding:5px 12px;cursor:pointer}
   .osc-tabs button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
   #osc{height:170px}
-  .deck{display:flex;flex-direction:column;gap:10px}
-  .deckgrid{column-count:4;column-gap:10px;margin-top:12px}
-  @media(max-width:1400px){.deckgrid{column-count:3}}
-  @media(max-width:1000px){.deckgrid{column-count:2}}
-  @media(max-width:640px){.deckgrid{column-count:1}}
-  .deckgrid .card,.deckgrid .decksep{break-inside:avoid;margin-bottom:10px;display:block}
-  .deckgrid .decksep{column-span:all}
+  #deckmason{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+  .dm-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:13px 14px;transition:border-color .15s}
   .card:hover{border-color:var(--border2)}
   .card.final{background:var(--panel);border-color:var(--accent)}
@@ -408,7 +402,8 @@
       </div>
       <div id="osc"></div>
     </div>
-    <div class="deck">
+  </div>
+  <div id="deckmason">
       <div class="card final">
         <div class="lab">최종 판정</div>
         <div style="display:flex;align-items:center;gap:13px">
@@ -443,9 +438,6 @@
         <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
         <div class="siglist" id="candleList"></div>
       </div>
-    </div>
-  </div>
-  <div class="deckgrid">
       <div class="card">
         <div class="lab">차트 패턴 <span class="hint">자동탐지 · 오탐 큼(참고용)</span></div>
         <div class="siglist" id="cpatList"></div>
@@ -840,6 +832,7 @@ async function load(){
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
     st.textContent=d.meta.source+' · '+d.meta.asof+' · '+d.meta.bars+'봉';
+    scheduleMason();
   }catch(e){
     st.className='status err';
     st.textContent='실패: '+e.message+' — python app.py 실행 여부 확인';
@@ -1118,7 +1111,7 @@ async function loadFngFull(){
   try{
     const d=await (await fetch('/fng_full')).json();
     if(d.error||!d.overview)return;
-    state.fngFull=d; renderFngBlock(d);
+    state.fngFull=d; renderFngBlock(d); scheduleMason();
   }catch(e){}
 }
 function renderFngBlock(d){
@@ -1796,6 +1789,30 @@ function setFavicon(){
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 setFavicon();
 document.getElementById('brandLogo').innerHTML=faceSVG(1);
+/* ---------- 데크 메이슨리: 카드를 가장 짧은 컬럼에 채워 공백 최소화 ---------- */
+let _masonRO=null;
+function layoutMason(){
+  const host=document.getElementById('deckmason'); if(!host)return;
+  if(!host._cards){host._cards=Array.from(host.children).filter(el=>!el.classList.contains('dm-col'));}
+  const cards=host._cards; if(!cards.length)return;
+  const w=host.clientWidth;
+  const n=w>=1500?4:w>=1080?3:w>=680?2:1;
+  if(host._n===n && host._built){
+    // 컬럼 수 동일 → 재배치만(높이 변동 반영)
+  }
+  host._n=n; host._built=true;
+  host.innerHTML='';
+  const cols=[];
+  for(let i=0;i<n;i++){const c=document.createElement('div');c.className='dm-col';host.appendChild(c);cols.push(c);}
+  cards.forEach(card=>{
+    let m=0; for(let i=1;i<n;i++){if(cols[i].offsetHeight<cols[m].offsetHeight)m=i;}
+    cols[m].appendChild(card);
+  });
+  // 카드 내부 lightweight-charts(공포탐욕 타임라인) 폭 보정
+  try{ if(typeof fngTlChart!=='undefined'&&fngTlChart){const el=document.getElementById('fngTimeline'); if(el&&el.clientWidth)fngTlChart.applyOptions({width:el.clientWidth});} }catch(e){}
+}
+function scheduleMason(){clearTimeout(window._mt);window._mt=setTimeout(layoutMason,60);}
+window.addEventListener('resize',scheduleMason);
 (function(){var sm=document.getElementById('spMark'); if(sm)sm.innerHTML=faceSVG(1);
   var sp=document.getElementById('splash'); if(sp){setTimeout(function(){sp.classList.add('hide');
     setTimeout(function(){sp.style.display='none';},650);},1500);}})();
@@ -1908,7 +1925,7 @@ function initAlerts(){
   startAlerts();
 }
 buildMarketEvents();
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();scheduleMason();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
