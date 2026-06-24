@@ -130,6 +130,26 @@ def sentiment_route():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/validate/<ticker>")
+def validate_route(ticker):
+    ticker = ticker.upper()
+    if ticker not in ("TQQQ", "SOXL"):
+        return jsonify({"error": f"지원하지 않는 종목: {ticker}"}), 400
+    try:
+        cost = float(request.args.get("cost", 5))
+    except ValueError:
+        cost = 5.0
+    try:
+        df, source = _load(ticker)
+        import backtest_engine as be
+        res = be.analyze(df, cost_bps=cost)
+        res["meta"] = {"ticker": ticker, "source": source}
+        return jsonify(res)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/drawings/<ticker>", methods=["GET", "POST"])
 def drawings(ticker):
     ticker = ticker.upper()

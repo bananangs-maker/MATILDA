@@ -141,6 +141,15 @@
   .stat .v.pos{color:var(--go)} .stat .v.neg{color:var(--stop)}
   .stat .l{font-size:10.5px;color:var(--muted);margin-top:3px}
   #btEquity{height:200px;margin-top:6px}
+  #vEquity{height:200px;margin-top:6px}
+  .wftab{width:100%;border-collapse:collapse;margin:10px 0;font-family:var(--mono);font-size:11px}
+  .wftab th,.wftab td{padding:6px 8px;border-bottom:1px solid var(--panel2);text-align:right}
+  .wftab th:first-child,.wftab td:first-child{text-align:left;color:var(--muted)}
+  .wfverdict{font-family:var(--mono);font-size:11.5px;margin:6px 0}
+  .mc{margin-top:12px}
+  .mc .mcrow{display:flex;gap:14px;font-family:var(--mono);font-size:11.5px;margin-bottom:8px;flex-wrap:wrap}
+  .mchist{display:flex;align-items:flex-end;gap:3px;height:60px;margin-top:4px}
+  .mchist .mb{flex:1;background:var(--stop);opacity:.55;border-radius:2px 2px 0 0;min-height:2px;transition:height .9s cubic-bezier(.2,.8,.2,1)}
   .btnote{font-size:11px;color:var(--faint);margin-top:10px;line-height:1.5}
   .drawbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
   .drawbar button{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--panel2);
@@ -343,6 +352,22 @@
     <div class="stats" id="btStats"></div>
     <div id="btEquity"></div>
     <div class="btnote">파란선=전략 자산곡선. 과거 성과가 미래를 보장하지 않으며, 거래비용·세금·슬리피지·레버리지 부식은 단순화되어 있습니다.</div>
+  </div>
+
+  <div class="bt">
+    <h3>전략 검증 <span class="ssub">엔진(연속 비중) · 거래비용·워크포워드·몬테카를로</span></h3>
+    <div class="sub">엔진의 권장 비중을 과거에 그대로 적용했을 때의 성과. 단순 규칙이 아니라 추세추종+변동성타겟팅 비중을 매일 반영합니다.</div>
+    <div class="btbar">
+      <label>거래비용(bps)</label>
+      <select id="vCost"><option value="0">0</option><option value="5" selected>5</option><option value="10">10</option></select>
+      <button class="minibtn" id="vRun">검증 실행</button>
+      <span class="btnote" id="vPeriod"></span>
+    </div>
+    <div class="stats" id="vStats"></div>
+    <div id="vEquity"></div>
+    <div id="vWf"></div>
+    <div id="vMc"></div>
+    <div class="btnote">전략 vs 매수후보유. 워크포워드=인샘플에서 고른 설정을 아웃오브샘플에 적용(과적합 점검). 몬테카를로=블록 부트스트랩으로 낙폭/수익 분포 추정.</div>
   </div>
   <div class="journal">
     <h3>매매 일지</h3>
@@ -724,6 +749,53 @@ async function runBacktest(){
   }finally{ btn.disabled=false; btn.textContent='백테스트 실행'; }
 }
 document.getElementById('btRun').onclick=runBacktest;
+
+/* ---------- 전략 검증 (Phase 3) ---------- */
+let vChart=null,vS1=null,vS2=null;
+function makeVChart(){
+  if(vChart||typeof LightweightCharts==='undefined')return;
+  vChart=LightweightCharts.createChart(document.getElementById('vEquity'),{
+    layout:{background:{color:'transparent'},textColor:C.ink,fontFamily:"'JetBrains Mono',monospace"},
+    grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
+    rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:200});
+  vS1=vChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(106,169,255,.25)',bottomColor:'rgba(106,169,255,.02)',lineWidth:2,priceLineVisible:false});
+  vS2=vChart.addLineSeries({color:C.faint,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  window.addEventListener('resize',()=>vChart&&vChart.applyOptions({width:document.getElementById('vEquity').clientWidth}));
+}
+async function runValidate(){
+  const cost=document.getElementById('vCost').value;
+  const btn=document.getElementById('vRun');btn.disabled=true;btn.textContent='검증 중…';
+  try{
+    const d=await (await fetch('/validate/'+state.ticker+'?cost='+cost)).json();
+    if(d.error)throw new Error(d.error);
+    const s=d.stats;
+    document.getElementById('vPeriod').textContent=state.ticker+' · '+s.period;
+    document.getElementById('vStats').innerHTML=
+      statCard(s.total,'전략 총수익',true)+statCard(s.bh_total,'매수후보유',true)+
+      statCard(s.cagr,'CAGR',true)+statCard(s.sharpe,'샤프',false)+
+      statCard(s.mdd,'전략 MDD',true)+statCard(s.bh_mdd,'보유 MDD',true)+
+      statCard(s.vol+'%','변동성',false)+statCard(s.avg_expo+'%','평균노출',false);
+    makeVChart(); if(vS1)vS1.setData(d.equity); if(vS2)vS2.setData(d.bh);
+    if(vChart)vChart.timeScale().fitContent();
+    const wf=d.walk_forward;
+    let html="<table class='wftab'><tr><th>목표변동성</th><th>IS샤프</th><th>OOS샤프</th><th>IS수익</th><th>OOS수익</th></tr>";
+    wf.rows.forEach(r=>{const best=r.target_vol===wf.best.target_vol;
+      html+="<tr"+(best?" style='color:var(--steel)'":"")+"><td>"+r.target_vol+(best?' ★':'')+"</td><td>"+r.is_sharpe+"</td><td>"+r.oos_sharpe+"</td><td>"+r.is_ret+"%</td><td>"+r.oos_ret+"%</td></tr>";});
+    html+="</table><div class='wfverdict'>아웃오브샘플 분기: "+wf.split_date+" · 판정: <b>"+wf.verdict+"</b></div>";
+    document.getElementById('vWf').innerHTML=html;
+    const mc=d.monte_carlo;
+    if(mc&&!mc.error){
+      const h=mc.mdd_hist, mx=Math.max.apply(null,h.counts.concat([1]));
+      const bars=h.counts.map(c=>"<div class='mb' style='height:"+Math.round(c/mx*100)+"%'></div>").join('');
+      document.getElementById('vMc').innerHTML=
+        "<div class='mc'><div class='mcrow'><span>최종수익 — 비관 p5 <b>"+mc.final.p5+"%</b></span><span>중앙 <b>"+mc.final.p50+"%</b></span><span>낙관 p95 <b>"+mc.final.p95+"%</b></span></div>"
+        +"<div class='mcrow'><span>최대낙폭 — 중앙 <b>"+mc.mdd.p50+"%</b></span><span>최악 <b style='color:var(--stop)'>"+mc.mdd.worst+"%</b></span><span style='color:var(--faint)'>("+mc.n_sims+"회 시뮬)</span></div>"
+        +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
+    }else document.getElementById('vMc').innerHTML='';
+  }catch(e){document.getElementById('vStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
+  finally{btn.disabled=false;btn.textContent='검증 실행';}
+}
+document.getElementById('vRun').onclick=runValidate;
 
 /* ---------- 그리기 도구: 차트 위 오버레이 캔버스 (트레이딩뷰 방식) ---------- */
 let ov,octx,ovDpr=1;

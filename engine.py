@@ -24,6 +24,36 @@ def _clamp(x, a=0.0, b=1.0):
     return max(a, min(b, x))
 
 
+def size_series(df: pd.DataFrame, target_vol: float = TARGET_VOL,
+                maxcap: float = MAXCAP) -> pd.Series:
+    """엔진 권장 비중(0~maxcap, 분수)을 전 기간에 대해 벡터화로 계산.
+    각 t의 값은 t까지의 데이터(rolling)만 사용 → 미래참조 없음. 백테스트용."""
+    close = df["close"]
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    sma200 = close.rolling(200).mean()
+    adx_, _, _ = I.adx(df)
+    rvol = I.realized_vol(close, 20)
+    cmfv = I.cmf(df, 20)
+    ret1 = close.pct_change() * 100
+    dd20 = (close / close.rolling(20).max() - 1) * 100
+    ext20 = (close - sma20) / sma20 * 100
+    above200 = close > sma200
+    align_up = sma50 > sma200
+    ranging = adx_ < 20
+
+    tf = pd.Series(np.select([above200 & align_up, above200 & ~align_up, ~above200],
+                             [1.0, 0.55, 0.12], default=0.4), index=close.index, dtype=float)
+    tf = tf * np.where(ranging.fillna(False), 0.6, 1.0)
+    vt = (target_vol / rvol).clip(0.15, 1.0).fillna(0.5)
+    cl = lambda x: x.clip(0, 1)
+    acute = (cl((ext20.abs() - 10) / 20) * 0.25 + cl((-dd20 - 5) / 20) * 0.30
+             + cl((-ret1 - 3) / 10) * 0.25 + cl(-cmfv * 2).fillna(0) * 0.10)
+    size = (maxcap * tf * vt * (1 - 0.7 * acute)).clip(0, maxcap)
+    size[sma200.isna()] = np.nan          # 200봉 워밍업 전엔 거래 안 함
+    return size
+
+
 def compute_engine(df: pd.DataFrame, vix=None) -> dict:
     close = df["close"]
     c = float(close.iloc[-1])
