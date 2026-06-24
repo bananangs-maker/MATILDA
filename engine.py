@@ -54,7 +54,7 @@ def size_series(df: pd.DataFrame, target_vol: float = TARGET_VOL,
     return size
 
 
-def compute_engine(df: pd.DataFrame, vix=None) -> dict:
+def compute_engine(df: pd.DataFrame, vix=None, fng=None) -> dict:
     close = df["close"]
     c = float(close.iloc[-1])
     sma20 = _last(close.rolling(20).mean())
@@ -92,6 +92,24 @@ def compute_engine(df: pd.DataFrame, vix=None) -> dict:
     vt = (TARGET_VOL / rvol) if (rvol == rvol and rvol > 0) else 0.5
     vt = _clamp(vt, 0.15, 1.0)
 
+    # ---- 매크로 (VIX + 공포탐욕) : 시장 전반 리스크 레짐 ----
+    macro_avail = (vix is not None) or (fng is not None)
+    vix_risk = _clamp((vix - 15) / 25) if vix is not None else 0.0      # 0@15 ~ 1@40
+    if fng is not None:
+        greed_risk = _clamp((fng - 70) / 30)        # 과열(탐욕) 0@70 ~ 1@100
+        fear_risk = _clamp((30 - fng) / 30)         # 패닉(공포) 0@30 ~ 1@0
+        fng_risk = max(greed_risk, 0.6 * fear_risk)  # 탐욕을 더 무겁게(자만이 낙폭 선행)
+    else:
+        fng_risk = 0.0
+    if vix is not None and fng is not None:
+        macro_risk = _clamp(0.6 * vix_risk + 0.4 * fng_risk)
+    elif vix is not None:
+        macro_risk = vix_risk
+    elif fng is not None:
+        macro_risk = fng_risk
+    else:
+        macro_risk = 0.0
+
     # ---- 리스크 점수 (0~100) ----
     comp = {
         "변동성": _clamp((rvol - 40) / 120) if rvol == rvol else 0.0,
@@ -101,28 +119,46 @@ def compute_engine(df: pd.DataFrame, vix=None) -> dict:
         "낙폭": _clamp((-dd20 - 5) / 20),
         "급락": _clamp((-ret1 - 3) / 10),
         "자금흐름": _clamp(-cmfv * 2) if cmfv == cmfv else 0.0,
-        "VIX": _clamp((vix - 15) / 25) if vix else 0.0,
+        "매크로": macro_risk,
     }
-    W = {"변동성": 0.22, "추세": 0.26, "이격": 0.12, "낙폭": 0.14,
-         "급락": 0.12, "자금흐름": 0.06, "VIX": 0.08}
+    W = {"변동성": 0.20, "추세": 0.24, "이격": 0.10, "낙폭": 0.12,
+         "급락": 0.10, "자금흐름": 0.06, "매크로": 0.18}
     risk = round(sum(comp[k] * W[k] for k in W) * 100)
-    rlabel = "위험" if risk >= 60 else "경계" if risk >= 35 else "양호"
 
-    # ---- 비중(연속): 급성 위험만 추가 감산(중복 방지) ----
-    acute = (comp["이격"] * 0.25 + comp["낙폭"] * 0.30 + comp["급락"] * 0.25
-             + comp["자금흐름"] * 0.10 + comp["VIX"] * 0.10)
+    # ---- 비중(연속): 급성 위험 추가 감산 (매크로 소프트 반영) ----
+    acute = (comp["이격"] * 0.22 + comp["낙폭"] * 0.26 + comp["급락"] * 0.22
+             + comp["자금흐름"] * 0.10 + comp["매크로"] * 0.20)
     size = MAXCAP * trend_factor * vt * (1 - 0.7 * acute)
     size = round(_clamp(size, 0, MAXCAP) * 100)
+
+    # ---- 하드 게이트: 극단 매크로/하락추세는 강제 축소 ----
+    hard = None
     if rko and risk >= 60:
-        size = min(size, 5)
+        size = min(size, 5); hard = "하락추세 + 고위험"
+    if vix is not None and vix >= 45:
+        size = min(size, 5); hard = "VIX 패닉(≥45)"
+    elif (vix is not None and vix >= 32) or (fng is not None and fng >= 90):
+        size = min(size, 15); hard = hard or "매크로 극단(VIX≥32 또는 극단적 탐욕)"
+    elif (fng is not None and fng <= 8):
+        size = min(size, 22); hard = hard or "극단적 공포(패닉)"
+    if hard:
+        risk = max(risk, 65)
+    rlabel = "위험" if risk >= 60 else "경계" if risk >= 35 else "양호"
 
     rationale = []
     rationale.append("추세 레짐: %s (200일선 %s)" % (regime, "위" if above200 else "아래"))
     rationale.append("실현변동성 %.0f%% → 변동성타겟 비중계수 %.2f" % (rvol if rvol == rvol else 0, vt))
     if ranging:
         rationale.append("ADX %.0f (<20) 횡보 — 추세추종 비중 축소" % (adxv if adxv == adxv else 0))
+    if macro_avail:
+        mp = []
+        if vix is not None: mp.append("VIX %.0f" % vix)
+        if fng is not None: mp.append("공포탐욕 %d" % fng)
+        rationale.append("매크로: " + ", ".join(mp) + (" → " + hard if hard else ""))
+    else:
+        rationale.append("매크로 미반영(데이터 없음) — 새로고침으로 재시도")
     if acute > 0.15:
-        big = sorted(((comp[k], k) for k in ("이격", "낙폭", "급락", "자금흐름", "VIX")), reverse=True)
+        big = sorted(((comp[k], k) for k in ("이격", "낙폭", "급락", "자금흐름", "매크로")), reverse=True)
         rationale.append("급성 리스크: " + ", ".join("%s" % k for v, k in big if v > 0.2))
 
     return {
@@ -139,6 +175,13 @@ def compute_engine(df: pd.DataFrame, vix=None) -> dict:
             "ext20": round(ext20, 1), "ext60": round(ext60, 1), "ext120": round(ext120, 1),
             "dd20": round(dd20, 1), "ret1": round(ret1, 1),
             "above200": bool(above200),
+        },
+        "macro": {
+            "vix": round(float(vix), 1) if vix is not None else None,
+            "fng": int(fng) if fng is not None else None,
+            "risk": round(macro_risk * 100),
+            "status": "ok" if macro_avail else "missing",
+            "hard": hard,
         },
         "rationale": rationale,
     }

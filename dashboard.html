@@ -254,6 +254,7 @@
   .pat .pbar i{display:block;height:100%;border-radius:3px;transition:width .6s ease}
   .pat .pstr span{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
   .tier.bull{background:rgba(38,194,129,.16);color:var(--go)} .tier.bear{background:rgba(242,54,69,.16);color:var(--stop)}
+  .macrostat{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -326,6 +327,7 @@
         <div class="sizebar"><div class="sizefill" id="sizefill" style="width:0%"></div><div class="ceiling" id="ceiling" style="left:100%"></div></div>
         <div class="riskbar"><div class="riskfill" id="riskfill" style="width:0%"></div></div>
         <div class="risklab" id="risklab"></div>
+        <div class="macrostat" id="macroStat"></div>
         <div class="eng-metrics" id="engMetrics"></div>
       </div>
       <div class="card">
@@ -623,7 +625,10 @@ function applyTimeframe(){
 async function load(){
   const st=document.getElementById('status'); st.className='status'; st.textContent='차트 불러오는 중…';
   try{
-    const res=await fetch('/chart/'+state.ticker);
+    const q=[];
+    if(state.macroOverride.vix!=null)q.push('vix='+state.macroOverride.vix);
+    if(state.macroOverride.fng!=null)q.push('fng='+state.macroOverride.fng);
+    const res=await fetch('/chart/'+state.ticker+(q.length?'?'+q.join('&'):''));
     const d=await res.json();
     if(!res.ok||d.error) throw new Error(d.error||'서버 오류');
     state.data=d; state.signals=d.signals;
@@ -705,16 +710,10 @@ function decide(){
   }
   const setV=(id,cls,t)=>{const e=document.getElementById(id);e.className='v '+(cls||'');e.textContent=t;};
   setV('vRegime',reg.tier,reg.label);setV('vTrend',gTC,gTrend);setV('vTiming',gMC,gTiming);
-  document.getElementById('finalCall').textContent=call;
-  document.getElementById('finalDetail').textContent=(tmTxt?tmTxt+' · ':'')+detail;
-  const f=document.getElementById('sizefill');f.style.width=size+'%';f.textContent=size+'%';
-  f.style.background=size>=Math.round(reg.ceil*0.7)?C.up:size>=20?C.amber:C.down;
-  document.getElementById('ceiling').style.left=reg.ceil+'%';
-  document.getElementById('faceBox').innerHTML=faceSVG(reg.tier==='RED'?0.05:Math.max(0.05,size/100));
-  // T0 리스크 = 붉은 호흡
-  const fc=document.querySelector('.card.final'), vr=document.getElementById('vRegime');
-  if(reg.risk){fc.classList.add('risk-on');vr.classList.add('risk-pulse');}
-  else{fc.classList.remove('risk-on');vr.classList.remove('risk-pulse');}
+  // 헤드라인(권장 비중·리스크·얼굴·비중바·붉은 호흡)은 엔진(renderEngine)이 단독 소유.
+  // 여기서 건드리면 엔진 판정과 충돌해 새로고침마다 깜빡임 → 의도적으로 손대지 않음.
+  const vr=document.getElementById('vRegime');
+  if(reg.risk)vr.classList.add('risk-pulse'); else vr.classList.remove('risk-pulse');
   let note;
   if(reg.tier==='RED')note='<b>리스크-오프:</b> 매수 신호 무시. 보유분 축소·청산 우선.';
   else if(!tr.pass)note='<b>추세 훼손:</b> 추격매수 금지. 단타만, 20MA 회복 실패 시 청산.';
@@ -792,36 +791,34 @@ document.querySelectorAll('#toggles button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#osc-tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#osc-tabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.osc=b.dataset.o;renderOsc();});
-state.macroAuto={vix:null,fng:null};      // 마지막 자동 수집값
-state.macroManual={vix:false,fng:false};  // 수동 조정 여부
-function setMacroAuto(key,val){            // 시장심리에서 호출
-  state.macroAuto[key]=val;
-  document.getElementById(key+'Auto').textContent=val;
-  if(!state.macroManual[key]){             // 수동 조정 중이 아니면 자동 반영
-    state.macro[key]=val;
-    document.getElementById(key).value=val;
-    document.getElementById(key+'v').textContent=val;
-    decide();
-  }
+state.macroOverride={vix:null,fng:null};   // null=서버 자동(시장심리), 값=수동 what-if
+function applyEngineMacro(m){               // renderEngine에서 호출: 엔진이 실제 쓴 매크로로 동기화
+  if(!m)return;
+  [['vix',m.vix],['fng',m.fng]].forEach(function(kv){
+    var k=kv[0], v=kv[1]; if(v==null)return;
+    document.getElementById(k+'Auto').textContent=v;
+    if(state.macroOverride[k]==null){       // 수동 아님 → 엔진값 표시
+      document.getElementById(k).value=v;
+      document.getElementById(k+'v').textContent=v;
+      state.macro[k]=v;
+    }
+  });
 }
+function reloadMacro(){ load(); }           // 오버라이드 반영해 차트/엔진 재계산
+[['vix','vixv'],['fng','fngv']].forEach(function(p){
+  var el=document.getElementById(p[0]);
+  el.oninput=function(){ document.getElementById(p[1]).textContent=el.value;
+    state.macroOverride[p[0]]=parseFloat(el.value);
+    document.getElementById(p[0]+'Tag').style.display='inline'; };
+  el.onchange=function(){ reloadMacro(); };  // 놓는 순간 엔진 재계산(what-if)
+});
 function revertMacro(key){
-  if(state.macroAuto[key]==null)return;
-  state.macroManual[key]=false;
+  state.macroOverride[key]=null;
   document.getElementById(key+'Tag').style.display='none';
-  state.macro[key]=state.macroAuto[key];
-  document.getElementById(key).value=state.macroAuto[key];
-  document.getElementById(key+'v').textContent=state.macroAuto[key];
-  decide();
+  reloadMacro();
 }
-[['vix','vixv'],['fng','fngv']].forEach(p=>{
-  const el=document.getElementById(p[0]);el.oninput=()=>{
-    state.macro[p[0]]=parseFloat(el.value);
-    document.getElementById(p[1]).textContent=el.value;
-    state.macroManual[p[0]]=true;          // 손대면 수동 모드
-    document.getElementById(p[0]+'Tag').style.display=state.macroAuto[p[0]]!=null?'inline':'none';
-    decide();};});
-document.getElementById('vixRev').onclick=()=>revertMacro('vix');
-document.getElementById('fngRev').onclick=()=>revertMacro('fng');
+document.getElementById('vixRev').onclick=function(){revertMacro('vix');};
+document.getElementById('fngRev').onclick=function(){revertMacro('fng');};
 /* ---------- 설정 (임계값) ---------- */
 function renderSettings(){document.querySelectorAll('[data-set]').forEach(inp=>{inp.value=state.settings[inp.dataset.set];});}
 document.querySelectorAll('[data-set]').forEach(inp=>inp.addEventListener('change',()=>{
@@ -919,9 +916,7 @@ async function fetchSentiment(){
     set('cFng',d.fng); set('cFngR',d.fng_rating||'공포·탐욕');
     set('cPc',d.putcall&&d.putcall.score!=null?d.putcall.score:'—');
     set('cVix',d.vix_raw!=null?d.vix_raw:(d.vix_comp&&d.vix_comp.score!=null?d.vix_comp.score:'—'));
-    // 거시 패널 자동 입력 (수동 조정 중이 아니면 반영)
-    if(d.fng!=null)setMacroAuto('fng',d.fng);
-    if(d.vix_raw!=null)setMacroAuto('vix',Math.round(d.vix_raw*10)/10);
+    // 거시 슬라이더는 엔진 응답(engine.macro)이 단독으로 동기화 — 여기선 시장심리 카드만 갱신
     decide();
     note.innerHTML='CNN 갱신 완료 · 공포탐욕 자동 입력됨'+(d.vix_raw!=null?' · VIX 자동':' · VIX는 수동(원시값 미제공)')+'. 풋콜/VIX는 CNN 정규화 점수(0~100)입니다.';
   }catch(e){
@@ -1313,6 +1308,12 @@ function renderEngine(e){
   const rf=document.getElementById('riskfill'); rf.style.width=e.risk+'%';
   rf.style.background=e.risk>=60?C.down:e.risk>=35?C.amber:C.up;
   document.getElementById('risklab').textContent='리스크 '+e.risk+' ('+e.risk_label+') · 레짐 '+e.regime;
+  applyEngineMacro(e.macro);
+  var ms=document.getElementById('macroStat');
+  if(ms){ var mm=e.macro||{};
+    if(mm.status==='missing'){ms.textContent='⚠ 매크로 미반영 — 새로고침';ms.style.color='var(--caution)';}
+    else{ms.textContent='매크로 반영'+(mm.hard?' · '+mm.hard:'');ms.style.color=mm.hard?'var(--stop)':'var(--faint)';}
+  }
   document.getElementById('finalCall').textContent='권장 비중 '+sz+'% · 리스크 '+e.risk_label;
   document.getElementById('finalDetail').textContent=(e.rationale||[]).join(' · ');
   const m=e.metrics||{}, chips=[];

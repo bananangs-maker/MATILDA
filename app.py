@@ -47,6 +47,22 @@ def mock_ohlcv(ticker: str, n: int = 500) -> pd.DataFrame:
 import time
 _CACHE = {}          # ticker -> (df, source, fetched_at)
 _TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 후 빠른 응답)
+_SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
+
+
+def _sentiment_cached():
+    """엔진 매크로 입력용 시장심리(VIX·공포탐욕) — 10분 캐시. 실패 시 None."""
+    if USE_MOCK:
+        return {"fng": 50, "vix_raw": 18.0, "vix_comp": {"score": 18.0}}
+    if _SENT["data"] is not None and time.time() - _SENT["ts"] < _TTL:
+        return _SENT["data"]
+    try:
+        from sentiment import cnn_sentiment
+        d = cnn_sentiment()
+        _SENT["data"] = d; _SENT["ts"] = time.time()
+        return d
+    except Exception:
+        return _SENT["data"]   # 직전 캐시라도 있으면 사용, 없으면 None
 
 
 def _load(ticker):
@@ -78,12 +94,25 @@ def chart(ticker):
         payload["signals"] = compute_signals(df)
         import backtest as bt
         payload["markers"] = bt.markers_from_signals(df, bt.generate_signals(df))
-        try:
-            vix = float(request.args.get("vix")) if request.args.get("vix") else None
-        except ValueError:
-            vix = None
+        # 매크로(VIX·공포탐욕): 쿼리 오버라이드 우선, 없으면 서버 캐시(시장심리) 사용
+        def _argf(name):
+            v = request.args.get(name)
+            try:
+                return float(v) if v not in (None, "") else None
+            except ValueError:
+                return None
+        vix = _argf("vix"); fng = _argf("fng")
+        if vix is None and fng is None:
+            sent = _sentiment_cached()
+            if sent:
+                if sent.get("vix_raw") is not None:
+                    vix = sent["vix_raw"]
+                elif sent.get("vix_comp", {}).get("score") is not None:
+                    vix = sent["vix_comp"]["score"]
+                if sent.get("fng") is not None:
+                    fng = sent["fng"]
         import engine as eng, patterns as pat, summary as summ
-        payload["engine"] = eng.compute_engine(df, vix=vix)
+        payload["engine"] = eng.compute_engine(df, vix=vix, fng=fng)
         payload["summary"] = summ.compute_summary(df)
         cross_sigs, cross_marks = pat.detect_ma_cross(df)
         payload["ma_cross"] = cross_sigs
