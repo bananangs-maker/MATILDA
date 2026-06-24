@@ -337,7 +337,6 @@
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
-    <button data-s="heur"><span class="sw" style="background:#F23645"></span>휴리스틱</button>
   </div>
   <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
@@ -363,6 +362,7 @@
         <button data-o="stoch">스토캐스틱</button>
         <button data-o="cmf">CMF</button>
         <button data-o="willr">Williams %R</button>
+        <button data-o="disp">이격도(20)</button>
       </div>
       <div id="osc"></div>
     </div>
@@ -412,18 +412,8 @@
         <div class="flags" id="flags"></div>
       </div>
 
-<div class="card">
-        <div class="lab">시장 심리 (CNN) <span id="sentiBtn" style="float:right;cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
-        <div class="senti" id="senti">
-          <div class="chip"><div class="n" id="cFng">—</div><div class="l" id="cFngR">공포·탐욕</div></div>
-          <div class="chip"><div class="n" id="cPc">—</div><div class="l">풋콜 옵션</div></div>
-          <div class="chip"><div class="n" id="cVix">—</div><div class="l">VIX 변동성</div></div>
-          <div class="chip"><div class="n" id="cPress">—</div><div class="l">매수압력%</div></div>
-        </div>
-        <div class="btnote" id="sentiNote">↻ 갱신을 누르면 CNN에서 자동으로 가져옵니다.</div>
-      </div>
       <div class="card" id="fngCard">
-        <div class="lab">공포·탐욕 상세 (CNN)</div>
+        <div class="lab">공포·탐욕 상세 (CNN) <span id="fngRefresh" style="cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
         <div class="fng-ov" id="fngOverview"></div>
         <div class="fng-tl-lab">타임라인 <span id="fngTlNow"></span></div>
         <div id="fngTimeline"></div>
@@ -580,9 +570,8 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false,pat:false,heur:false},
+           vwap:false,ichi:false,kelt:false,donch:false,pat:false},
   patternMarkers:[],
-  heurMarkers:[],
   flags:[],
   fngFull:null,
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
@@ -639,36 +628,11 @@ function applyToggles(){
   vol.applyOptions({visible:state.toggles.vol});
   updateMarkers();
 }
-function buildHeurMarkers(d){
-  state.heurMarkers=[];
-  if(!d||!d.candles)return;
-  const St=state.settings, ema={};
-  (d.ema20||[]).forEach(p=>ema[p.time]=p.value);
-  const c=d.candles, out=[];
-  const bigThr=Math.abs(St.crashDay||5), extThr=St.extMax||12;
-  let prevOver=false,prevUnder=false;
-  for(let i=0;i<c.length;i++){
-    const o=c[i].open,cl=c[i].close,t=c[i].time;
-    if(o>0){
-      const body=(cl-o)/o*100;
-      if(body<=-bigThr)out.push({time:t,position:'aboveBar',color:C.down,shape:'arrowDown',text:'장대음봉'});
-    }
-    const e=ema[t];
-    if(e!=null&&e>0){
-      const ext=(cl/e-1)*100, over=ext>=extThr, under=ext<=-extThr;
-      if(over&&!prevOver)out.push({time:t,position:'aboveBar',color:C.caution,shape:'circle',text:'이격과열'});
-      if(under&&!prevUnder)out.push({time:t,position:'belowBar',color:C.steel,shape:'circle',text:'이격과매도'});
-      prevOver=over;prevUnder=under;
-    }
-  }
-  state.heurMarkers=out;
-}
 function updateMarkers(){
   if(!candle)return;
   let m=[];
   if(state.toggles.sig&&state.markers)m=m.concat(state.markers);
   if(state.toggles.pat&&state.patternMarkers)m=m.concat(state.patternMarkers);
-  if(state.toggles.heur&&state.heurMarkers)m=m.concat(state.heurMarkers);
   m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
   candle.setMarkers(m);
 }
@@ -705,6 +669,14 @@ function renderOsc(){
   else if(state.osc==='stoch'){oscSeries.k=addLine(d.stoch_k,C.steel,1.5);oscSeries.d=addLine(d.stoch_d,C.amber,1.2);ref(oscSeries.k,80,C.down);ref(oscSeries.k,20,C.up);}
   else if(state.osc==='cmf'){oscSeries.m=addLine(d.cmf,C.purple);ref(oscSeries.m,0,C.faint);}
   else if(state.osc==='willr'){oscSeries.m=addLine(d.willr,C.steel);ref(oscSeries.m,-20,C.down);ref(oscSeries.m,-80,C.up);}
+  else if(state.osc==='disp'){
+    const c=d.candles||[], N=20, out=[];
+    for(let i=N-1;i<c.length;i++){let s=0;for(let j=i-N+1;j<=i;j++)s+=c[j].close;const ma=s/N;
+      out.push({time:c[i].time,value:+((c[i].close/ma-1)*100).toFixed(2)});}
+    oscSeries.m=addLine(out,C.amber);
+    const ex=state.settings.extMax||12;
+    ref(oscSeries.m,0,C.faint);ref(oscSeries.m,ex,C.down);ref(oscSeries.m,-ex,C.up);
+  }
   else if(state.osc==='macd'){
     oscSeries.h=oscChart.addHistogramSeries({priceLineVisible:false,lastValueVisible:false});
     oscSeries.h.setData(d.macd_hist);
@@ -732,12 +704,10 @@ async function load(){
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
     state.markers=mk;
-    buildHeurMarkers(d);
     renderPrice(d); renderOsc(); decide(); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
     renderFundamentals(d.fundamentals);
-    var cp=document.getElementById('cPress'); if(cp&&d.signals)cp.textContent=d.signals.pressure;
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
     st.textContent=d.meta.source+' · '+d.meta.asof+' · '+d.meta.bars+'봉';
@@ -1002,24 +972,8 @@ document.getElementById('jDate').value=new Date().toISOString().slice(0,10);
 renderJournal();
 
 /* ---------- CNN 시장 심리 ---------- */
-async function fetchSentiment(){
-  const note=document.getElementById('sentiNote'); note.textContent='CNN에서 가져오는 중…';
-  try{
-    const d=await (await fetch('/sentiment')).json();
-    if(d.error)throw new Error(d.error);
-    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=(v==null?'—':v);};
-    set('cFng',d.fng); set('cFngR',d.fng_rating||'공포·탐욕');
-    set('cPc',d.putcall&&d.putcall.score!=null?d.putcall.score:'—');
-    set('cVix',d.vix_raw!=null?d.vix_raw:(d.vix_comp&&d.vix_comp.score!=null?d.vix_comp.score:'—'));
-    // 거시 슬라이더는 엔진 응답(engine.macro)이 단독으로 동기화 — 여기선 시장심리 카드만 갱신
-    decide();
-    note.innerHTML='CNN 갱신 완료 · 공포탐욕 자동 입력됨'+(d.vix_raw!=null?' · VIX 자동':' · VIX는 수동(원시값 미제공)')+'. 풋콜/VIX는 CNN 정규화 점수(0~100)입니다.';
-    loadFngFull();
-  }catch(e){
-    note.textContent='CNN 심리 가져오기 실패: '+e.message+' — VIX·공포탐욕은 직접 입력하세요.';
-  }
-}
-document.getElementById('sentiBtn').onclick=fetchSentiment;
+function refreshSentiment(){ loadFngFull(); }
+(function(){const b=document.getElementById('fngRefresh'); if(b)b.onclick=refreshSentiment;})();
 
 const FNG_RATE_KO={'extreme fear':['극단적 공포',C=>C.down],'fear':['공포',C=>C.down],
   'neutral':['중립',C=>C.faint],'greed':['탐욕',C=>C.up],'extreme greed':['극단적 탐욕',C=>C.up]};
@@ -1794,7 +1748,7 @@ function initAlerts(){
   document.getElementById('alNow').onclick=()=>checkAlerts(true);
   startAlerts();
 }
-if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
