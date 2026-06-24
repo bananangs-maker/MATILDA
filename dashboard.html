@@ -273,6 +273,12 @@
   .evt .edot{width:7px;height:7px;border-radius:2px;flex:none}
   .evt .enm{flex:1;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .evt .edate{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+  .newslist{display:flex;flex-direction:column;gap:2px}
+  .news{display:flex;align-items:baseline;gap:7px;padding:6px 4px;border-radius:7px;text-decoration:none;transition:background .12s}
+  .news:hover{background:var(--panel2)}
+  .news .nsrc{flex:none;font-family:var(--mono);font-size:9px;color:var(--faint);width:62px}
+  .news .ntit{flex:1;font-size:11.5px;color:var(--ink);line-height:1.4}
+  .news .ntime{flex:none;font-family:var(--mono);font-size:9px;color:var(--faint);white-space:nowrap}
   .macrostat{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px}
   .ticktape{overflow:hidden;background:var(--panel);border:1px solid var(--border);border-radius:10px;
     margin:10px 0;height:34px;display:flex;align-items:center;position:relative}
@@ -297,6 +303,9 @@
   .fng-ov{margin-bottom:12px}
   .fng-ov #fngGaugeBox{max-width:200px;margin:0 auto}
   .fng-score{text-align:center;font-family:var(--disp);font-weight:700;font-size:19px;line-height:1;margin-top:2px}
+  .fng-press{text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px}
+  .fng-press b{font-weight:700;font-size:12px}
+  .fng-press span{color:var(--faint);font-size:9.5px}
   .fng-ov .fcmps{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-top:14px}
   .fcmp{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .fcmp-txt{display:flex;flex-direction:column;line-height:1.25}
@@ -419,11 +428,6 @@
         <div class="siglist" id="cpatList"></div>
       </div>
 
-      <div class="card">
-        <div class="lab">주요 이벤트 <span class="hint">FOMC · 네마녀 · 선거</span></div>
-        <div class="evtlist" id="evtList"></div>
-      </div>
-
 <div class="card">
         <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
         <div class="siglist" id="crossList"></div>
@@ -453,6 +457,14 @@
           <div class="sumtab"><h4>오실레이터</h4><div id="tOsc"></div></div>
           <div class="sumtab"><h4>이동평균</h4><div id="tMa"></div></div>
         </div>
+      </div>
+      <div class="card">
+        <div class="lab">주요 이벤트 <span class="hint">FOMC · 네마녀 · 선거</span></div>
+        <div class="evtlist" id="evtList"></div>
+      </div>
+      <div class="card">
+        <div class="lab">매크로 뉴스 <span id="newsRefresh" style="cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
+        <div class="newslist" id="newsList"><div class="none">불러오는 중…</div></div>
       </div>
       <div class="decksep"><span>입력 · 도구</span></div>
 <div class="card macro">
@@ -1104,6 +1116,7 @@ function renderFngBlock(d){
   document.getElementById('fngOverview').innerHTML=
     "<div class='gbox' id='fngGaugeBox'></div>"
     +"<div class='fng-score' style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"</div>"
+    +"<div class='fng-press'>매수압력 <b style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"</b> <span>· 7개 지표 종합(공포탐욕 지수)</span></div>"
     +"<div class='fcmps'>"+badge('전일',ov.prev_close)+badge('1주 전',ov.prev_week)+badge('1달 전',ov.prev_month)+badge('1년 전',ov.prev_year)+"</div>";
   renderFngGauge(sc);
   // TIMELINE: 다른 차트와 동일한 lightweight-charts (폰트·선 고정 크기)
@@ -1612,11 +1625,38 @@ function renderSummary(s){
 function renderFlagTicker(){
   const inner=document.getElementById('flagTapeInner'); if(!inner)return;
   const fl=state.flags||[];
-  const items=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
-    :["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"];
+  // 5일 이내 다가오는 주요 이벤트를 티커 앞에 표시
+  const today=new Date().toISOString().slice(0,10);
+  const soon=(state.events||[]).filter(e=>{
+    const dd=Math.round((new Date(e.date+'T00:00:00Z')-new Date(today+'T00:00:00Z'))/86400000);
+    return dd>=0&&dd<=5;}).map(e=>{
+    const dd=Math.round((new Date(e.date+'T00:00:00Z')-new Date(today+'T00:00:00Z'))/86400000);
+    const tag=dd===0?'D-DAY':'D-'+dd;
+    return "<span class='ti evt'><span class='dot' style='background:"+e.color+"'></span><b>"+tag+" "+e.ko+"</b> ("+e.date+")</span>";});
+  const flags=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
+    :(soon.length?[]:["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"]);
+  const items=soon.concat(flags);
   // 끊김 없는 무한 스크롤 위해 2벌 복제
   inner.innerHTML=items.concat(items).join('');
 }
+async function loadNews(){
+  const el=document.getElementById('newsList'); if(!el)return;
+  try{
+    const d=await (await fetch('/news')).json();
+    const ns=d.news||[];
+    if(!ns.length){el.innerHTML="<div class='none'>뉴스를 불러오지 못했습니다.</div>";return;}
+    const rel=p=>{if(!p)return'';const t=new Date(p);if(isNaN(t))return'';
+      const m=Math.round((Date.now()-t)/60000);
+      return m<60?m+'분 전':m<1440?Math.round(m/60)+'시간 전':Math.round(m/1440)+'일 전';};
+    el.innerHTML=ns.map(n=>
+      "<a class='news' href='"+n.link+"' target='_blank' rel='noopener'>"
+      +"<span class='nsrc'>"+n.source+"</span>"
+      +"<span class='ntit'>"+n.title+"</span>"
+      +(rel(n.pub)?"<span class='ntime'>"+rel(n.pub)+"</span>":"")
+      +"</a>").join('');
+  }catch(e){el.innerHTML="<div class='none'>뉴스 로딩 실패</div>";}
+}
+(function(){const b=document.getElementById('newsRefresh'); if(b)b.onclick=loadNews;})();
 async function loadMktTape(){
   const inner=document.getElementById('mktTapeInner'); if(!inner)return;
   try{
@@ -1855,7 +1895,8 @@ function initAlerts(){
   document.getElementById('alNow').onclick=()=>checkAlerts(true);
   startAlerts();
 }
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);}
+buildMarketEvents();
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);loadNews();setInterval(loadNews,600000);}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>

@@ -51,6 +51,7 @@ _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 _FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
 _MKT = {"data": None, "ts": 0.0}    # 환율·유가·금·BTC 시세 캐시 (3분)
+_NEWS = {"data": None, "ts": 0.0}   # 매크로 뉴스 RSS 캐시 (10분)
 
 
 def _sentiment_cached():
@@ -219,6 +220,30 @@ def seasonality_route(ticker):
         return jsonify(se.seasonality(df))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/news")
+def news_route():
+    if USE_MOCK:
+        return jsonify({"news": [
+            {"title": "Fed holds rates steady as inflation cools further", "link": "https://example.com/1", "source": "CNBC", "pub": ""},
+            {"title": "Tech megacaps lead Nasdaq higher; chipmakers surge", "link": "https://example.com/2", "source": "WSJ", "pub": ""},
+            {"title": "Treasury yields slip ahead of PCE inflation data", "link": "https://example.com/3", "source": "MarketWatch", "pub": ""},
+            {"title": "Oil steadies as supply concerns ease", "link": "https://example.com/4", "source": "CNBC", "pub": ""},
+            {"title": "Dollar weakens against major peers on rate-cut bets", "link": "https://example.com/5", "source": "WSJ", "pub": ""},
+        ]})
+    global _NEWS
+    try:
+        if _NEWS["data"] is not None and time.time() - _NEWS["ts"] < 600:
+            return jsonify({"news": _NEWS["data"]})
+        from news import fetch_news
+        n = fetch_news(8)
+        _NEWS["data"] = n; _NEWS["ts"] = time.time()
+        return jsonify({"news": n})
+    except Exception as e:
+        if _NEWS["data"]:
+            return jsonify({"news": _NEWS["data"]})
+        return jsonify({"news": [], "error": str(e)})
 
 
 @app.route("/tickers")
