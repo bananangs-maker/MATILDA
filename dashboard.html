@@ -221,10 +221,31 @@
   .seapath{fill:none;stroke-linejoin:round;stroke-linecap:round}
   .seapath.draw{stroke-dasharray:2000;stroke-dashoffset:2000;animation:seadraw 1.3s ease forwards}
   @keyframes seadraw{to{stroke-dashoffset:0}}
+  .alrow,.alrow2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;font-size:11.5px;color:var(--muted)}
+  .alrow2{margin-top:7px}
+  .alsw{display:flex;align-items:center;gap:5px;cursor:pointer}
+  .alconds{display:flex;flex-direction:column;gap:5px;padding:7px 0;border-top:1px solid var(--panel2);border-bottom:1px solid var(--panel2)}
+  .alconds label{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink);cursor:pointer}
+  .alrow2 select{background:var(--panel2);color:var(--ink);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-family:var(--mono);font-size:11px}
+  .allog{margin-top:8px;max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+  .allog .ali{font-size:10.5px;font-family:var(--mono);padding:5px 7px;background:var(--panel2);border-radius:6px;border-left:3px solid var(--steel)}
+  .allog .ali.sell{border-left-color:var(--stop)} .allog .ali.buy{border-left-color:var(--go)}
+  .allog .ali .t{color:var(--faint);font-size:9.5px}
+  .allog .none{color:var(--faint);font-size:11px}
+  .toasts{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:340px}
+  .toast{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--steel);border-radius:10px;
+    padding:12px 14px;box-shadow:0 12px 34px rgba(0,0,0,.55);animation:toastin .35s cubic-bezier(.2,.9,.3,1);cursor:pointer}
+  .toast.sell{border-left-color:var(--stop)} .toast.buy{border-left-color:var(--go)} .toast.warn{border-left-color:var(--caution)}
+  .toast .tk{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--ink);margin-bottom:3px;display:flex;justify-content:space-between}
+  .toast .tk .sym{color:var(--steel)}
+  .toast .tm{font-size:11.5px;color:var(--muted);line-height:1.5}
+  @keyframes toastin{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+  @keyframes toastout{to{transform:translateX(40px);opacity:0}}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
 <body>
+<div id="toasts" class="toasts"></div>
 <div class="wrap">
   <div class="bar">
     <div class="brand" id="brand"><span id="brandLogo" style="display:inline-block;width:22px;height:22px;vertical-align:-4px;margin-right:8px"></span>MATILDA<span class="last" id="lastpx"></span></div>
@@ -362,6 +383,26 @@
       <div class="card">
         <div class="lab">그리기 목록 <span id="drawSync" style="float:right;font-size:9.5px;color:var(--faint)">로컬 저장</span></div>
         <div class="dlist" id="dlist"></div>
+      </div>
+      <div class="card">
+        <div class="lab">신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></div>
+        <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
+          <button class="minibtn" id="alPerm">권한 요청</button>
+          <button class="minibtn" id="alNow">지금 점검</button></div>
+        <div class="alconds" id="alConds">
+          <label><input type="checkbox" data-c="t0" checked> 리스크 급등(T0)</label>
+          <label><input type="checkbox" data-c="ma200" checked> 200일선 이탈/회복</label>
+          <label><input type="checkbox" data-c="cross" checked> 골든·데드 크로스</label>
+          <label><input type="checkbox" data-c="rsi" checked> RSI 과매수/과매도</label>
+          <label><input type="checkbox" data-c="crash" checked> 급락 감지</label>
+        </div>
+        <div class="alrow2">
+          <label class="alsw"><input type="checkbox" id="alSound" checked> 소리</label>
+          <span>주기</span>
+          <select id="alInterval"><option value="5">5분</option><option value="10" selected>10분</option><option value="15">15분</option><option value="30">30분</option></select>
+          <span class="hint" id="alRiskTh"></span>
+        </div>
+        <div class="allog" id="alLog"></div>
       </div>
       <div class="card">
         <div class="lab">신호 충돌 · 경고</div>
@@ -1337,7 +1378,115 @@ function setFavicon(){
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 setFavicon();
 document.getElementById('brandLogo').innerHTML=faceSVG(1);
-if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();}
+
+/* ================= 신호 알림 (화면) ================= */
+const AL_RISK_TH=70;   // 엔진 리스크 T0 급등 임계
+state.alertCfg=loadLS('matilda_alertcfg',{on:false,sound:true,interval:10,conds:{t0:true,ma200:true,cross:true,rsi:true,crash:true}});
+state.alertSnap={};    // ticker -> {risk,above200,rsiState,crossDate,crashDate}
+state.alertLog=loadLS('matilda_alertlog',[]);
+let alTimer=null, audioCtx=null;
+
+function beep(){
+  if(!state.alertCfg.sound)return;
+  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.connect(g);g.connect(audioCtx.destination);o.type='sine';o.frequency.value=880;
+    g.gain.setValueAtTime(0.001,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18,audioCtx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.32);
+    o.start();o.stop(audioCtx.currentTime+0.33);}catch(e){}
+}
+function toast(sym,msg,side){
+  const box=document.getElementById('toasts');
+  const el=document.createElement('div');el.className='toast '+(side||'');
+  el.innerHTML="<div class='tk'><span class='sym'>"+sym+"</span><span>×</span></div><div class='tm'>"+msg+"</div>";
+  el.onclick=()=>{el.style.animation='toastout .3s forwards';setTimeout(()=>el.remove(),300);
+    if(sym!==state.ticker&&state.watchlist.includes(sym))setTicker(sym);};
+  box.appendChild(el);
+  setTimeout(()=>{if(el.parentNode){el.style.animation='toastout .3s forwards';setTimeout(()=>el.remove(),300);}},9000);
+}
+function notify(sym,msg){
+  if('Notification' in window && Notification.permission==='granted'){
+    try{new Notification('MATILDA · '+sym,{body:msg});}catch(e){}
+  }
+}
+function fireAlert(sym,msg,side){
+  toast(sym,msg,side); notify(sym,msg); beep();
+  const e={sym,msg,side,t:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})};
+  state.alertLog.unshift(e); state.alertLog=state.alertLog.slice(0,40); saveLS('matilda_alertlog',state.alertLog); renderAlLog();
+}
+function renderAlLog(){
+  const el=document.getElementById('alLog');
+  el.innerHTML=state.alertLog.length?state.alertLog.map(e=>
+    "<div class='ali "+(e.side||'')+"'><span class='t'>"+e.t+"</span> <b>"+e.sym+"</b> "+e.msg+"</div>").join('')
+    :"<div class='none'>아직 알림 없음</div>";
+}
+function rsiState(v,S){return v>=S.rsiOB?'ob':v<=S.rsiOS?'os':'mid';}
+
+function evalTicker(sym,d){
+  const cfg=state.alertCfg.conds, S=state.settings;
+  const prev=state.alertSnap[sym];
+  const e=d.engine||{}, m=e.metrics||{};
+  const risk=e.risk, above=m.above200, ret1=m.ret1;
+  const rsiArr=d.rsi||[], rsiVal=rsiArr.length?rsiArr[rsiArr.length-1].value:null;
+  const rs=rsiVal!=null?rsiState(rsiVal,S):null;
+  const newCross=(d.ma_cross||[]).find(c=>c.bars_ago===0);
+  const lastBar=(d.candles&&d.candles.length)?d.candles[d.candles.length-1].time:'';
+  const snap={risk,above200:above,rsiState:rs,
+    crossDate:newCross?newCross.date:(prev&&prev.crossDate),
+    crashDate:prev&&prev.crashDate};
+
+  if(prev){  // 기준선 확보 후에만 발화 (전이 순간)
+    if(cfg.t0 && prev.risk!=null && risk!=null && prev.risk<AL_RISK_TH && risk>=AL_RISK_TH)
+      fireAlert(sym,'엔진 리스크 급등 → '+risk+' ('+(e.risk_label||'')+'). 비중 축소 점검.','sell');
+    if(cfg.ma200 && prev.above200!=null && above!=null && prev.above200!==above)
+      fireAlert(sym, above?'200일선 회복(추세 우호로 전환).':'200일선 이탈(추세 약화 — 비중 점검).', above?'buy':'sell');
+    if(cfg.cross && newCross && newCross.date!==prev.crossDate)
+      fireAlert(sym, newCross.label+' 발생'+(newCross.aligned?' (추세 정렬 ✓)':''), newCross.side==='buy'?'buy':'sell');
+    if(cfg.rsi && rs && prev.rsiState && rs!==prev.rsiState){
+      if(rs==='ob')fireAlert(sym,'RSI 과매수 진입 ('+rsiVal.toFixed(0)+') — 분할 익절 고려.','sell');
+      else if(rs==='os')fireAlert(sym,'RSI 과매도 진입 ('+rsiVal.toFixed(0)+') — 반등 주시.','buy');
+    }
+    if(cfg.crash && ret1!=null && ret1<=-S.crashDay && prev.crashDate!==lastBar){
+      fireAlert(sym,'급락 감지 '+ret1.toFixed(1)+'% — 변동성 확대.','sell'); snap.crashDate=lastBar;
+    }
+  }
+  state.alertSnap[sym]=snap;
+}
+
+async function checkAlerts(manual){
+  if(!state.alertCfg.on && !manual)return;
+  const st=document.getElementById('alStatus'); st.textContent='점검 중…';
+  for(const sym of state.watchlist){
+    try{const d=await (await fetch('/chart/'+sym)).json(); if(!d.error)evalTicker(sym,d);}catch(e){}
+    await new Promise(r=>setTimeout(r,250)); // 분당 제한 회피
+  }
+  st.textContent=state.alertCfg.on?('켜짐 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 점검'):'꺼짐';
+}
+function startAlerts(){
+  if(alTimer)clearInterval(alTimer);
+  if(state.alertCfg.on){alTimer=setInterval(checkAlerts,state.alertCfg.interval*60000);
+    document.getElementById('alStatus').textContent='켜짐';}
+  else document.getElementById('alStatus').textContent='꺼짐';
+}
+function initAlerts(){
+  const c=state.alertCfg;
+  document.getElementById('alOn').checked=c.on;
+  document.getElementById('alSound').checked=c.sound;
+  document.getElementById('alInterval').value=String(c.interval);
+  document.getElementById('alRiskTh').textContent='T0 임계 리스크 '+AL_RISK_TH;
+  document.querySelectorAll('#alConds input[data-c]').forEach(i=>i.checked=!!c.conds[i.dataset.c]);
+  renderAlLog();
+  document.getElementById('alOn').onchange=e=>{c.on=e.target.checked;saveLS('matilda_alertcfg',c);startAlerts();
+    if(c.on){if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();checkAlerts(true);}};
+  document.getElementById('alSound').onchange=e=>{c.sound=e.target.checked;saveLS('matilda_alertcfg',c);if(c.sound)beep();};
+  document.getElementById('alInterval').onchange=e=>{c.interval=+e.target.value;saveLS('matilda_alertcfg',c);startAlerts();};
+  document.querySelectorAll('#alConds input[data-c]').forEach(i=>i.onchange=()=>{c.conds[i.dataset.c]=i.checked;saveLS('matilda_alertcfg',c);});
+  document.getElementById('alPerm').onclick=()=>{if('Notification'in window)Notification.requestPermission().then(p=>toast('알림','권한: '+p,'')); else toast('알림','이 브라우저는 알림 미지원','warn');};
+  document.getElementById('alNow').onclick=()=>checkAlerts(true);
+  startAlerts();
+}
+if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
