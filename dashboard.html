@@ -215,6 +215,12 @@
   .searchres .sr span{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .searchres .sr i{font-style:normal;font-size:10px;color:var(--faint);white-space:nowrap}
   .searchres .sempty{padding:10px 12px;color:var(--faint);font-size:11.5px;font-family:var(--mono)}
+  .sealeg{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-family:var(--mono);font-size:10.5px}
+  .sealeg .li{display:flex;align-items:center;gap:5px;color:var(--muted)}
+  .sealeg .li .sw{width:14px;height:3px;border-radius:2px}
+  .seapath{fill:none;stroke-linejoin:round;stroke-linecap:round}
+  .seapath.draw{stroke-dasharray:2000;stroke-dashoffset:2000;animation:seadraw 1.3s ease forwards}
+  @keyframes seadraw{to{stroke-dashoffset:0}}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -374,6 +380,14 @@
       <div class="sumtab"><h4>오실레이터</h4><div id="tOsc"></div></div>
       <div class="sumtab"><h4>이동평균</h4><div id="tMa"></div></div>
     </div>
+  </div>
+
+  <div class="summary">
+    <h3>역사적 계절성 <span class="ssub">연도별 연초 대비 누적수익률 — 과거 데이터, 예측 아님</span>
+      <span class="hint" id="seaBtn" style="cursor:pointer;color:var(--steel)">↻ 불러오기</span></h3>
+    <div id="seaChart" style="margin-top:10px"></div>
+    <div id="seaLegend" class="sealeg"></div>
+    <div id="seaMonths" class="btnote" style="margin-top:8px"></div>
   </div>
   <div class="bt">
     <h3>백테스트</h3>
@@ -902,6 +916,60 @@ async function runValidate(){
   finally{btn.disabled=false;btn.textContent='검증 실행';}
 }
 document.getElementById('vRun').onclick=runValidate;
+
+/* ---------- 계절성 차트 (SVG) ---------- */
+const MON=['1','2','3','4','5','6','7','8','9','10','11','12'];
+async function loadSeasonality(){
+  const note=document.getElementById('seaMonths');
+  document.getElementById('seaBtn').textContent='불러오는 중…';
+  try{
+    const d=await (await fetch('/seasonality/'+state.ticker)).json();
+    if(d.error)throw new Error(d.error);
+    renderSeasonality(d);
+    document.getElementById('seaBtn').textContent='↻ 새로고침';
+  }catch(e){note.textContent='실패: '+e.message;document.getElementById('seaBtn').textContent='↻ 불러오기';}
+}
+function renderSeasonality(d){
+  const W=820,H=300,padL=44,padR=16,padT=14,padB=26;
+  const all=[]; d.series.forEach(s=>s.points.forEach(p=>all.push(p.v))); (d.avg||[]).forEach(p=>all.push(p.v));
+  if(!all.length){document.getElementById('seaChart').innerHTML="<div class='btnote'>데이터 없음</div>";return;}
+  let mn=Math.min.apply(null,all), mx=Math.max.apply(null,all);
+  const pad=(mx-mn)*0.1||5; mn-=pad; mx+=pad;
+  const X=m=>padL+(m-1)/11*(W-padL-padR);
+  const Y=v=>padT+(1-(v-mn)/(mx-mn))*(H-padT-padB);
+  const palette=['#6AA9FF','#3DD68C','#F2B233','#C792EA','#FF7AA0','#26C6DA','#9aa7bd','#E0A458'];
+  let svg="<svg viewBox='0 0 "+W+" "+H+"' style='width:100%;height:auto'>";
+  // 0% 기준선 + y그리드
+  [mn,(mn+mx)/2,mx,0].forEach(v=>{ if(v<mn||v>mx)return; const y=Y(v);
+    svg+="<line x1='"+padL+"' y1='"+y+"' x2='"+(W-padR)+"' y2='"+y+"' stroke='"+(Math.abs(v)<0.01?'#3a4658':'#1E2632')+"' stroke-width='1'/>";
+    svg+="<text x='"+(padL-6)+"' y='"+(y+3)+"' fill='#5C667A' font-size='10' text-anchor='end' font-family='monospace'>"+v.toFixed(0)+"%</text>";});
+  MON.forEach((m,i)=>{svg+="<text x='"+X(i+1)+"' y='"+(H-8)+"' fill='#5C667A' font-size='10' text-anchor='middle' font-family='monospace'>"+m+"</text>";});
+  // 평균선(점선)
+  if(d.avg&&d.avg.length){const dd=d.avg.map((p,i)=>(i?'L':'M')+X(p.m)+' '+Y(p.v)).join(' ');
+    svg+="<path d='"+dd+"' class='seapath' stroke='#ffffff' stroke-width='1.5' stroke-dasharray='5 4' opacity='.55'/>";}
+  // 연도별
+  const leg=[];
+  d.series.forEach((s,idx)=>{
+    const col=s.current?'#6AA9FF':palette[(idx+1)%palette.length];
+    const wdt=s.current?2.6:1.4, op=s.current?1:.5;
+    const dd=s.points.map((p,i)=>(i?'L':'M')+X(p.m)+' '+Y(p.v)).join(' ');
+    svg+="<path d='"+dd+"' class='seapath draw' stroke='"+col+"' stroke-width='"+wdt+"' opacity='"+op+"' style='animation-delay:"+(idx*0.08)+"s'/>";
+    if(s.current)s.points.forEach(p=>{svg+="<circle cx='"+X(p.m)+"' cy='"+Y(p.v)+"' r='2.6' fill='"+col+"'/>";});
+    leg.push("<span class='li'><span class='sw' style='background:"+col+"'></span>"+s.year+" ("+(s.ytd>=0?'+':'')+s.ytd+"%)</span>");
+  });
+  leg.push("<span class='li'><span class='sw' style='background:#fff;opacity:.6'></span>평균</span>");
+  svg+="</svg>";
+  document.getElementById('seaChart').innerHTML=svg;
+  document.getElementById('seaLegend').innerHTML=leg.join('');
+  // 월별 베스트/워스트
+  if(d.month_stats&&d.month_stats.length){
+    const best=d.month_stats.slice().sort((a,b)=>b.avg-a.avg)[0];
+    const worst=d.month_stats.slice().sort((a,b)=>a.avg-b.avg)[0];
+    document.getElementById('seaMonths').innerHTML=
+      "과거 평균 최강 <b style='color:var(--go)'>"+best.m+"월 (+"+best.avg+"%, 승률 "+best.win+"%)</b> · 최약 <b style='color:var(--stop)'>"+worst.m+"월 ("+worst.avg+"%, 승률 "+worst.win+"%)</b> · 계절성은 참고용이며 레버리지 ETF는 변동성이 지배적입니다.";
+  }
+}
+document.getElementById('seaBtn').onclick=loadSeasonality;
 
 /* ---------- 그리기 도구: 차트 위 오버레이 캔버스 (트레이딩뷰 방식) ---------- */
 let ov,octx,ovDpr=1;

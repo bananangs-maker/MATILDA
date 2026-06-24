@@ -170,6 +170,20 @@ def watchlist():
         return jsonify({"configured": True, "error": str(e)}), 500
 
 
+@app.route("/seasonality/<ticker>")
+def seasonality_route(ticker):
+    ticker = ticker.upper()
+    from public_data import valid_ticker
+    if not valid_ticker(ticker):
+        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
+    try:
+        df, source = _load(ticker)
+        import seasonality as se
+        return jsonify(se.seasonality(df))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/sentiment")
 def sentiment_route():
     try:
