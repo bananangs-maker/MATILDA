@@ -1,18 +1,18 @@
 """
-engine.py  — 마틸다 신호/리스크 엔진 (Phase 2)
+engine.py — 마틸다 라이브 판정 엔진 (strategy.py 단일 코어를 호출)
 
-철학(레버리지 ETF에 통계적으로 견고한 접근):
-  1) 추세추종 게이트  : 200일선 위에서만 본격 노출 (장기 추세 방향에만 베팅)
-  2) 변동성 타겟팅    : 실현변동성이 높을수록 비중을 연속적으로 축소
-  3) 연속 리스크 점수 : 이격·낙폭·급락·자금흐름·VIX를 가중 합산(0~100)해 추가 감산
-→ 0/100 하드컷이 아니라 0~80% 사이에서 '연속적으로' 권장 비중을 산출.
+[중요] 포지션 사이징의 진실원은 strategy.exposure_core() 하나다.
+  - 백테스트(quant.py)도 '같은 함수'를 쓴다 → 라이브와 백테스트가 일치.
+  - 여기서는 마지막 봉의 코어 비중을 가져와 라이브 전용 매크로 오버레이(소프트+하드게이트)를 덧씌우고,
+    표시용 리스크 점수(0~100)와 레짐/근거를 구성한다.
+모든 임계/계수는 strategy.PARAMS 에서 온다 (하드코딩 상수 제거).
 """
 import numpy as np
 import pandas as pd
-import indicators as I
+import strategy as ST
 
-TARGET_VOL = 35.0   # 포지션 목표 연율 변동성(%) — 보수적
-MAXCAP = 0.80       # 최대 권장 비중
+TARGET_VOL = ST.PARAMS["target_vol"]   # 하위 호환(기존 import)
+MAXCAP = ST.PARAMS["maxcap"]
 
 
 def _last(s):
@@ -20,151 +20,92 @@ def _last(s):
     return float(s.iloc[-1]) if len(s) else float("nan")
 
 
-def _clamp(x, a=0.0, b=1.0):
-    return max(a, min(b, x))
+def size_series(df, target_vol=None, maxcap=None):
+    """하위 호환 래퍼 — 코어 비중 시계열. (target_vol 지정 시 그 값으로)"""
+    p = {}
+    if target_vol is not None:
+        p["target_vol"] = target_vol
+    if maxcap is not None:
+        p["maxcap"] = maxcap
+    return ST.exposure_core(df, p)
 
 
-def size_series(df: pd.DataFrame, target_vol: float = TARGET_VOL,
-                maxcap: float = MAXCAP) -> pd.Series:
-    """엔진 권장 비중(0~maxcap, 분수)을 전 기간에 대해 벡터화로 계산.
-    각 t의 값은 t까지의 데이터(rolling)만 사용 → 미래참조 없음. 백테스트용."""
-    close = df["close"]
-    sma20 = close.rolling(20).mean()
-    sma50 = close.rolling(50).mean()
-    sma200 = close.rolling(200).mean()
-    adx_, _, _ = I.adx(df)
-    rvol = I.realized_vol(close, 20)
-    cmfv = I.cmf(df, 20)
-    ret1 = close.pct_change() * 100
-    dd20 = (close / close.rolling(20).max() - 1) * 100
-    ext20 = (close - sma20) / sma20 * 100
-    above200 = close > sma200
-    align_up = sma50 > sma200
-    ranging = adx_ < 20
+def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) -> dict:
+    p = {**ST.PARAMS, **(params or {})}
+    k = ST.indikit(df)
+    comp_s = ST._components(k, p)
+    tf_s, ranging_s, above200_s, align_up_s = ST.regime_series(k, p)
+    core = ST.exposure_core(df, p)
 
-    tf = pd.Series(np.select([above200 & align_up, above200 & ~align_up, ~above200],
-                             [1.0, 0.55, 0.12], default=0.4), index=close.index, dtype=float)
-    tf = tf * np.where(ranging.fillna(False), 0.6, 1.0)
-    vt = (target_vol / rvol).clip(0.15, 1.0).fillna(0.5)
-    cl = lambda x: x.clip(0, 1)
-    acute = (cl((ext20.abs() - 10) / 20) * 0.25 + cl((-dd20 - 5) / 20) * 0.30
-             + cl((-ret1 - 3) / 10) * 0.25 + cl(-cmfv * 2).fillna(0) * 0.10)
-    size = (maxcap * tf * vt * (1 - 0.7 * acute)).clip(0, maxcap)
-    size[sma200.isna()] = np.nan          # 200봉 워밍업 전엔 거래 안 함
-    return size
-
-
-def compute_engine(df: pd.DataFrame, vix=None, fng=None) -> dict:
-    close = df["close"]
-    c = float(close.iloc[-1])
-    sma20 = _last(close.rolling(20).mean())
-    sma50 = _last(close.rolling(50).mean())
-    sma60 = _last(close.rolling(60).mean())
-    sma120 = _last(close.rolling(120).mean())
-    sma200 = _last(close.rolling(200).mean())
-    adx_, pdi, mdi = I.adx(df)
-    adxv, pdiv, mdiv = _last(adx_), _last(pdi), _last(mdi)
-    rvol = _last(I.realized_vol(close, 20))
-    cmfv = _last(I.cmf(df))
-    ret1 = float(close.pct_change().iloc[-1] * 100) if len(close) > 1 else 0.0
-    hi20 = _last(close.rolling(20).max())
-    dd20 = (c / hi20 - 1) * 100 if hi20 else 0.0
-    ext20 = ((c - sma20) / sma20 * 100) if sma20 == sma20 and sma20 else 0.0
+    c = float(k["close"].iloc[-1])
+    sma50 = _last(k["sma50"]); sma60 = _last(k["sma60"])
+    sma120 = _last(k["sma120"]); sma200 = _last(k["sma200"])
+    adxv = _last(k["adx"]); pdiv = _last(k["pdi"]); mdiv = _last(k["mdi"])
+    rvol = _last(k["rvol"]); cmfv = _last(k["cmf"])
+    ret1 = float(k["ret1"].iloc[-1]) if len(k["ret1"]) else 0.0
+    dd20 = float(k["dd20"].iloc[-1]) if len(k["dd20"]) else 0.0
+    ext20 = float(comp_s["ext20_raw"].iloc[-1]) if len(comp_s["ext20_raw"]) else 0.0
     ext60 = ((c - sma60) / sma60 * 100) if sma60 == sma60 and sma60 else 0.0
     ext120 = ((c - sma120) / sma120 * 100) if sma120 == sma120 and sma120 else 0.0
 
-    # ---- 추세 레짐 (장기 게이트) ----
-    above200 = (sma200 == sma200) and c > sma200
-    align_up = (sma50 == sma50) and (sma200 == sma200) and sma50 > sma200
-    if above200 and align_up:
-        regime, trend_factor, rko = "상승추세", 1.0, False
+    above200 = bool(above200_s.iloc[-1]) if sma200 == sma200 else False
+    align_up = bool(align_up_s.iloc[-1]) if (sma50 == sma50 and sma200 == sma200) else False
+    ranging = bool(ranging_s.iloc[-1])
+    if not (sma200 == sma200):
+        regime = "판단보류"
+    elif above200 and align_up:
+        regime = "상승추세"
     elif above200:
-        regime, trend_factor, rko = "추세약화", 0.55, False
-    elif sma200 == sma200:
-        regime, trend_factor, rko = "하락추세", 0.12, True
+        regime = "추세약화"
     else:
-        regime, trend_factor, rko = "판단보류", 0.40, False
-    ranging = (adxv == adxv) and adxv < 20
-    if ranging:
-        trend_factor *= 0.6
+        regime = "하락추세"
 
-    # ---- 변동성 타겟팅 ----
-    vt = (TARGET_VOL / rvol) if (rvol == rvol and rvol > 0) else 0.5
-    vt = _clamp(vt, 0.15, 1.0)
+    vt = _last((p["target_vol"] / k["rvol"]).clip(p["vt_floor"], p["vt_cap"]))
+    if vt != vt:
+        vt = 0.5
+    trend_factor = float(tf_s.iloc[-1]) if len(tf_s) else p["tf_unknown"]
 
-    # ---- 매크로 (VIX + 공포탐욕) : 시장 전반 리스크 레짐 ----
+    # 마지막 봉 컴포넌트(0~1)
+    def cl(s): return float(s.iloc[-1]) if len(s.dropna()) else 0.0
+    comp = {"변동성": cl(comp_s["vol"]),
+            "추세": 1.0 if regime == "하락추세" else 0.5 if regime in ("추세약화", "판단보류")
+                    else (0.3 if ranging else 0.0),
+            "이격": cl(comp_s["ext"]), "낙폭": cl(comp_s["dd"]),
+            "급락": cl(comp_s["crash"]), "자금흐름": cl(comp_s["cmf"]),
+            "매크로": ST.macro_risk_value(vix, fng)}
+    W = {"변동성": p["rw_vol"], "추세": p["rw_trend"], "이격": p["rw_ext"], "낙폭": p["rw_dd"],
+         "급락": p["rw_crash"], "자금흐름": p["rw_cmf"], "매크로": p["rw_macro"]}
+    risk = round(sum(comp[k_] * W[k_] for k_ in W) * 100)
+
+    # 코어 비중(라이브 last bar) → 매크로 오버레이
+    core_last = core.dropna()
+    size_core = int(round(float(core_last.iloc[-1]) * 100)) if len(core_last) else 0
     macro_avail = (vix is not None) or (fng is not None)
-    vix_risk = _clamp((vix - 15) / 25) if vix is not None else 0.0      # 0@15 ~ 1@40
-    if fng is not None:
-        greed_risk = _clamp((fng - 70) / 30)        # 과열(탐욕) 0@70 ~ 1@100
-        fear_risk = _clamp((30 - fng) / 30)         # 패닉(공포) 0@30 ~ 1@0
-        fng_risk = max(greed_risk, 0.6 * fear_risk)  # 탐욕을 더 무겁게(자만이 낙폭 선행)
-    else:
-        fng_risk = 0.0
-    if vix is not None and fng is not None:
-        macro_risk = _clamp(0.6 * vix_risk + 0.4 * fng_risk)
-    elif vix is not None:
-        macro_risk = vix_risk
-    elif fng is not None:
-        macro_risk = fng_risk
-    else:
-        macro_risk = 0.0
-
-    # ---- 리스크 점수 (0~100) ----
-    comp = {
-        "변동성": _clamp((rvol - 40) / 120) if rvol == rvol else 0.0,
-        "추세": 1.0 if regime == "하락추세" else 0.5 if regime in ("추세약화", "판단보류")
-                else (0.3 if ranging else 0.0),
-        "이격": _clamp((abs(ext20) - 10) / 20),
-        "낙폭": _clamp((-dd20 - 5) / 20),
-        "급락": _clamp((-ret1 - 3) / 10),
-        "자금흐름": _clamp(-cmfv * 2) if cmfv == cmfv else 0.0,
-        "매크로": macro_risk,
-    }
-    W = {"변동성": 0.20, "추세": 0.24, "이격": 0.10, "낙폭": 0.12,
-         "급락": 0.10, "자금흐름": 0.06, "매크로": 0.18}
-    risk = round(sum(comp[k] * W[k] for k in W) * 100)
-
-    # ---- 비중(연속): 급성 위험 추가 감산 (매크로 소프트 반영) ----
-    acute = (comp["이격"] * 0.22 + comp["낙폭"] * 0.26 + comp["급락"] * 0.22
-             + comp["자금흐름"] * 0.10 + comp["매크로"] * 0.20)
-    size = MAXCAP * trend_factor * vt * (1 - 0.7 * acute)
-    size = round(_clamp(size, 0, MAXCAP) * 100)
-
-    # ---- 하드 게이트: 극단 매크로/하락추세는 강제 축소 ----
-    hard = None
-    if rko and risk >= 60:
-        size = min(size, 5); hard = "하락추세 + 고위험"
-    if vix is not None and vix >= 45:
-        size = min(size, 5); hard = "VIX 패닉(≥45)"
-    elif (vix is not None and vix >= 32) or (fng is not None and fng >= 90):
-        size = min(size, 15); hard = hard or "매크로 극단(VIX≥32 또는 극단적 탐욕)"
-    elif (fng is not None and fng <= 8):
-        size = min(size, 22); hard = hard or "극단적 공포(패닉)"
-    if hard:
-        risk = max(risk, 65)
+    size, risk, macro_pct, hard = ST.macro_overlay(size_core, risk, vix, fng)
     rlabel = "위험" if risk >= 60 else "경계" if risk >= 35 else "양호"
 
     rationale = []
     rationale.append("추세 레짐: %s (200일선 %s)" % (regime, "위" if above200 else "아래"))
     rationale.append("실현변동성 %.0f%% → 변동성타겟 비중계수 %.2f" % (rvol if rvol == rvol else 0, vt))
     if ranging:
-        rationale.append("ADX %.0f (<20) 횡보 — 추세추종 비중 축소" % (adxv if adxv == adxv else 0))
+        rationale.append("ADX %.0f (<%g) 횡보 — 추세추종 비중 축소" % (adxv if adxv == adxv else 0, p["adx_range"]))
     if macro_avail:
         mp = []
         if vix is not None: mp.append("VIX %.0f" % vix)
         if fng is not None: mp.append("공포탐욕 %d" % fng)
-        rationale.append("매크로: " + ", ".join(mp) + (" → " + hard if hard else ""))
+        rationale.append("매크로: " + ", ".join(mp) + (" → " + hard if hard else " (소프트 반영)"))
     else:
-        rationale.append("매크로 미반영(데이터 없음) — 새로고침으로 재시도")
-    if acute > 0.15:
-        big = sorted(((comp[k], k) for k in ("이격", "낙폭", "급락", "자금흐름", "매크로")), reverse=True)
-        rationale.append("급성 리스크: " + ", ".join("%s" % k for v, k in big if v > 0.2))
+        rationale.append("매크로 미반영(데이터 없음) — 백테스트 코어와 동일 조건")
+    acute_now = (comp["이격"] * p["acute_w_ext"] + comp["낙폭"] * p["acute_w_dd"]
+                 + comp["급락"] * p["acute_w_crash"] + comp["자금흐름"] * p["acute_w_cmf"])
+    if acute_now > 0.15:
+        big = sorted(((comp[x], x) for x in ("이격", "낙폭", "급락", "자금흐름", "매크로")), reverse=True)
+        rationale.append("급성 리스크: " + ", ".join("%s" % x for v, x in big if v > 0.2))
 
     return {
-        "risk": risk, "risk_label": rlabel, "components": {k: round(comp[k] * 100) for k in comp},
-        "weights": {k: W[k] for k in W},
-        "regime": regime, "size": int(size), "maxcap": int(MAXCAP * 100),
+        "risk": risk, "risk_label": rlabel, "components": {k_: round(comp[k_] * 100) for k_ in comp},
+        "weights": {k_: W[k_] for k_ in W},
+        "regime": regime, "size": int(size), "maxcap": int(p["maxcap"] * 100),
         "trend_factor": round(trend_factor, 2), "vol_factor": round(vt, 2),
         "metrics": {
             "rvol": round(rvol, 1) if rvol == rvol else None,
@@ -179,9 +120,7 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None) -> dict:
         "macro": {
             "vix": round(float(vix), 1) if vix is not None else None,
             "fng": int(fng) if fng is not None else None,
-            "risk": round(macro_risk * 100),
-            "status": "ok" if macro_avail else "missing",
-            "hard": hard,
+            "risk": macro_pct, "status": "ok" if macro_avail else "missing", "hard": hard,
         },
         "rationale": rationale,
     }
