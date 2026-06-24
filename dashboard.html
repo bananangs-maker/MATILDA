@@ -337,6 +337,7 @@
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
+    <button data-s="heur"><span class="sw" style="background:#F23645"></span>휴리스틱</button>
   </div>
   <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
@@ -579,8 +580,9 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false,pat:false},
+           vwap:false,ichi:false,kelt:false,donch:false,pat:false,heur:false},
   patternMarkers:[],
+  heurMarkers:[],
   flags:[],
   fngFull:null,
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
@@ -637,11 +639,36 @@ function applyToggles(){
   vol.applyOptions({visible:state.toggles.vol});
   updateMarkers();
 }
+function buildHeurMarkers(d){
+  state.heurMarkers=[];
+  if(!d||!d.candles)return;
+  const St=state.settings, ema={};
+  (d.ema20||[]).forEach(p=>ema[p.time]=p.value);
+  const c=d.candles, out=[];
+  const bigThr=Math.abs(St.crashDay||5), extThr=St.extMax||12;
+  let prevOver=false,prevUnder=false;
+  for(let i=0;i<c.length;i++){
+    const o=c[i].open,cl=c[i].close,t=c[i].time;
+    if(o>0){
+      const body=(cl-o)/o*100;
+      if(body<=-bigThr)out.push({time:t,position:'aboveBar',color:C.down,shape:'arrowDown',text:'장대음봉'});
+    }
+    const e=ema[t];
+    if(e!=null&&e>0){
+      const ext=(cl/e-1)*100, over=ext>=extThr, under=ext<=-extThr;
+      if(over&&!prevOver)out.push({time:t,position:'aboveBar',color:C.caution,shape:'circle',text:'이격과열'});
+      if(under&&!prevUnder)out.push({time:t,position:'belowBar',color:C.steel,shape:'circle',text:'이격과매도'});
+      prevOver=over;prevUnder=under;
+    }
+  }
+  state.heurMarkers=out;
+}
 function updateMarkers(){
   if(!candle)return;
   let m=[];
   if(state.toggles.sig&&state.markers)m=m.concat(state.markers);
   if(state.toggles.pat&&state.patternMarkers)m=m.concat(state.patternMarkers);
+  if(state.toggles.heur&&state.heurMarkers)m=m.concat(state.heurMarkers);
   m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
   candle.setMarkers(m);
 }
@@ -705,6 +732,7 @@ async function load(){
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
     state.markers=mk;
+    buildHeurMarkers(d);
     renderPrice(d); renderOsc(); decide(); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
@@ -1066,10 +1094,11 @@ function renderFngTimeline(s){
       width:el.clientWidth,height:118,
       layout:{background:{color:'transparent'},textColor:C.faint,fontFamily:"'JetBrains Mono',monospace",fontSize:9},
       grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
-      rightPriceScale:{borderColor:C.border,entireTextOnly:true},
+      leftPriceScale:{visible:true,borderColor:C.border,entireTextOnly:true},
+      rightPriceScale:{visible:false},
       timeScale:{borderColor:C.border,fixLeftEdge:true,fixRightEdge:true},
       handleScroll:false,handleScale:false,crosshair:{horzLine:{visible:false},vertLine:{visible:false}}});
-    fngTlSeries=fngTlChart.addLineSeries({color:C.steel,lineWidth:1,priceLineVisible:false,lastValueVisible:false,
+    fngTlSeries=fngTlChart.addLineSeries({priceScaleId:'left',color:C.steel,lineWidth:1,priceLineVisible:false,lastValueVisible:false,
       autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})});
     fngTlSeries.createPriceLine({price:75,color:C.up,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'탐욕'});
     fngTlSeries.createPriceLine({price:25,color:C.down,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'공포'});
