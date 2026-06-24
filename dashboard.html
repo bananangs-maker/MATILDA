@@ -288,6 +288,11 @@
         <div class="eng-metrics" id="engMetrics"></div>
       </div>
       <div class="card">
+        <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
+        <div class="senti" id="fundPrice"></div>
+        <div id="fundExtra"></div>
+      </div>
+      <div class="card">
         <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
         <div class="siglist" id="crossList"></div>
       </div>
@@ -539,6 +544,7 @@ async function load(){
     renderPrice(d); renderOsc(); decide(); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
+    renderFundamentals(d.fundamentals);
     var cp=document.getElementById('cPress'); if(cp&&d.signals)cp.textContent=d.signals.pressure;
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
@@ -1196,6 +1202,40 @@ function renderCandles(list){
     "<div class='si'><span class='tier "+p.kind+"'>"+(p.kind==='bull'?'매수':p.kind==='bear'?'매도':'중립')+"</span>"
     +"<span class='snm'>"+p.name+" · "+p.bars_ago+"봉 전</span>"
     +"<span class='cf'>신뢰 "+p.confidence+"%</span></div>").join('');
+}
+function renderFundamentals(f){
+  const kindEl=document.getElementById('fundKind'), pe=document.getElementById('fundPrice'), ex=document.getElementById('fundExtra');
+  if(!f||f.error){kindEl.textContent='';pe.innerHTML='';ex.innerHTML="<div class='none' style='font-size:11px;color:var(--faint)'>정보 없음</div>";return;}
+  const p=f.price||{};
+  kindEl.textContent=f.kind==='leveraged_etf'?'레버리지 ETF':f.kind==='stock'?'개별주':'';
+  const chip=(n,l,cls)=>"<div class='chip'><div class='n' "+(cls?"style='color:"+cls+"'":"")+">"+(n==null?'—':n)+"</div><div class='l'>"+l+"</div></div>";
+  const sgn=v=>v==null?'':(v>=0?C.up:C.down);
+  pe.innerHTML=chip(p.ann_vol!=null?p.ann_vol+'%':'—','연율변동성')
+    +chip(p.pos52!=null?p.pos52+'%':'—','52주위치')
+    +chip(p.ret_1y!=null?p.ret_1y+'%':'—','1년수익',sgn(p.ret_1y))
+    +chip(p.mdd_1y!=null?p.mdd_1y+'%':'—','1년MDD',C.down);
+  let html='';
+  if(f.leverage){
+    const L=f.leverage;
+    html+="<div class='eng-metrics' style='margin-top:10px'>";
+    html+="<span>기초 "+L.underlying+" ×"+L.leverage+"</span>";
+    if(L.beta!=null)html+="<span>추적베타 "+L.beta+"</span>";
+    if(L.decay!=null)html+="<span style='color:"+(L.decay<0?C.down:C.up)+"'>부식률 "+L.decay+"%</span>";
+    if(L.etf_ret!=null)html+="<span>실제 "+L.etf_ret+"% vs 기대 "+L.expected_ret+"%</span>";
+    html+="</div><div class='btnote' style='margin-top:6px'>부식률=실제수익−(배수×기초수익). 음수면 변동성 부식이 누적된 것.</div>";
+  }else if(f.stats){
+    const S=f.stats, fmtCap=v=>v==null?'—':(v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(1)+'B':(v/1e6).toFixed(0)+'M');
+    html+="<div class='eng-metrics' style='margin-top:10px'>";
+    if(S.pe!=null)html+="<span>PER "+(+S.pe).toFixed(1)+"</span>";
+    if(S.pb!=null)html+="<span>PBR "+(+S.pb).toFixed(2)+"</span>";
+    if(S.ps!=null)html+="<span>PSR "+(+S.ps).toFixed(2)+"</span>";
+    if(S.mktcap!=null)html+="<span>시총 "+fmtCap(S.mktcap)+"</span>";
+    if(S.div_yield!=null)html+="<span>배당 "+(S.div_yield*100).toFixed(2)+"%</span>";
+    html+="</div>";
+  }else{
+    html="<div class='btnote' style='margin-top:8px'>재무지표 없음(ETF이거나 무료 데이터 미제공)</div>";
+  }
+  ex.innerHTML=html;
 }
 
 /* ---------- 로고: 일본 문장(家紋) 스타일 매화 꽃 문양 — 레드. m=진입 비중(0~1) → 밝기 ---------- */

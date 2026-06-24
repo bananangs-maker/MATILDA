@@ -89,6 +89,11 @@ def chart(ticker):
         payload["ma_cross"] = cross_sigs
         payload["cross_markers"] = cross_marks
         payload["candles_patterns"] = pat.detect_candles(df)
+        try:
+            import fundamentals as fund
+            payload["fundamentals"] = fund.metrics(ticker, df)
+        except Exception as fe:
+            payload["fundamentals"] = {"error": str(fe)}
         payload["meta"] = {
             "ticker": ticker, "source": source,
             "asof": str(df["date"].iloc[-1]),
