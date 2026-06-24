@@ -255,6 +255,20 @@
   .pat .pstr span{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
   .tier.bull{background:rgba(38,194,129,.16);color:var(--go)} .tier.bear{background:rgba(242,54,69,.16);color:var(--stop)}
   .macrostat{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px}
+  .ticktape{overflow:hidden;background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    margin:10px 0;height:34px;display:flex;align-items:center;position:relative}
+  .ticktape::before{content:'신호';position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;
+    padding:0 11px;background:var(--panel2);color:var(--faint);font-family:var(--mono);font-size:10px;
+    border-right:1px solid var(--border);z-index:2}
+  .tapeinner{display:flex;gap:26px;white-space:nowrap;padding-left:60px;will-change:transform;
+    animation:tape 32s linear infinite}
+  .ticktape:hover .tapeinner{animation-play-state:paused}
+  .tapeinner .ti{font-family:var(--mono);font-size:11.5px;display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+  .tapeinner .ti b{font-weight:700}
+  .tapeinner .ti.danger b{color:var(--stop)} .tapeinner .ti.warn b{color:var(--caution)} .tapeinner .ti.info b{color:var(--steel)}
+  .tapeinner .dot{width:5px;height:5px;border-radius:50%}
+  .ti.danger .dot{background:var(--stop)} .ti.warn .dot{background:var(--caution)} .ti.info .dot{background:var(--steel)}
+  @keyframes tape{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -289,6 +303,7 @@
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
   </div>
+  <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
   <div class="main">
     <div class="charts">
       <div class="drawbar" id="drawbar">
@@ -512,6 +527,7 @@ const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
            vwap:false,ichi:false,kelt:false,donch:false,pat:false},
   patternMarkers:[],
+  flags:[],
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
@@ -680,55 +696,51 @@ function trend(s){
 }
 function decide(){
   const s=state.signals; if(!s)return;
-  const St=state.settings, reg=regime(), tr=trend(s);
+  const e=(state.data&&state.data.engine)||null;
+  const St=state.settings;
   const ob=s.rsi>=St.rsiOB||s.mfi>=St.mfiOB;
-  const timing=()=>{
-    if(s.bbpos==='above')return{v:'AMBER',f:0.6,t:'상단 과열 — 분할 익절 우선'};
-    if(s.bbpos==='upper')return{v:'GREEN',f:0.8,t:'중심~상단, 보유·소량'};
-    if(s.bbpos==='mid'||s.bbpos==='lower')return{v:'GREEN',f:1.0,t:'눌림목 — 분할 매수'};
-    return{v:'AMBER',f:0.5,t:'하단 이탈 — 반등 확인 후'};
-  };
-  let size=0,call,detail,tmTxt='',gTrend='—',gTiming='—',gTC='',gMC='';
-  if(reg.tier==='RED'){
-    call='리스크-오프 · 비중 축소 / 신규 금지';
-    detail='T0 차단: '+(reg.reasons.join(', ')||'거시 위험')+'. 하위 티어 미고려. 보유분 청산·헷지 점검.';
-    gTrend='보류';gTiming='보류';
-  }else if(!tr.pass){
-    if(tr.hardBear){size=Math.min(reg.ceil,8);call='롱 비허가 · 반등 단타만(소액)';
-      detail='장기·중기 하락. '+(tr.dmg.join(', ')||'')+' 저항/SAR 빠른 청산.';gTrend='롱 불가';gTC='RED';}
-    else{size=Math.min(reg.ceil,15);call='추세 훼손 · 관망 / 소액 단타';
-      detail='추세 건전성 미충족: '+(tr.dmg.join(', ')||'정렬 약함')+'. 신규 보유 보류.';gTrend='미충족';gTC='AMBER';}
-    gTiming='보류';
-  }else{
-    const tm=timing(); tmTxt=tm.t; gTrend='롱 허가';gTC='GREEN';gTiming=tm.v==='GREEN'?'진입':'조건부';gMC=tm.v;
-    size=Math.round(reg.ceil*tr.sf*tm.f);
-    if(ob&&s.bbpos==='above')size=Math.min(size,Math.round(reg.ceil*0.45));
-    const big=Math.round(reg.ceil*0.7);
-    if(size>=big){call='분할 진입(추세추종) · 비중 '+size+'%';detail='전 티어 통과. 그래도 분할로 평단 관리.';}
-    else if(size>=20){call='소액 분할 진입 · 비중 '+size+'%';detail='통과했으나 신호 강도 보통 — 보수적 비중.';}
-    else{call='관망 / 최소 비중 '+size+'%';detail='통과했으나 타이밍 약함.';}
+  const setV=(id,cls,t)=>{const el=document.getElementById(id);el.className='v '+(cls||'');el.textContent=t;};
+
+  // --- T0~T3는 엔진 종합판정에서 파생 (헤드라인과 정합 보장) ---
+  let regCls='', regLab='—', riskOff=false, trCls='', trLab='—', tmCls='', tmLab='—';
+  if(e){
+    if(e.risk>=60||(e.macro&&e.macro.hard)){regCls='RED';regLab='리스크-오프';riskOff=true;}
+    else if(e.risk>=35){regCls='AMBER';regLab='경계';}
+    else{regCls='GREEN';regLab='리스크-온';}
+    if(e.regime==='하락추세'){trCls='RED';trLab='롱 불가';}
+    else if(e.regime==='상승추세'){trCls='GREEN';trLab='롱 허가';}
+    else{trCls='AMBER';trLab='조건부';}
+    if(s.bbpos==='above'){tmCls='AMBER';tmLab=ob?'과열':'상단';}
+    else if(s.bbpos==='upper'){tmCls='GREEN';tmLab='보유';}
+    else if(s.bbpos==='mid'||s.bbpos==='lower'){tmCls='GREEN';tmLab='눌림목';}
+    else if(s.bbpos==='below'){tmCls='AMBER';tmLab='하단이탈';}
+    else{tmCls='GREEN';tmLab='중립';}
   }
-  const setV=(id,cls,t)=>{const e=document.getElementById(id);e.className='v '+(cls||'');e.textContent=t;};
-  setV('vRegime',reg.tier,reg.label);setV('vTrend',gTC,gTrend);setV('vTiming',gMC,gTiming);
-  // 헤드라인(권장 비중·리스크·얼굴·비중바·붉은 호흡)은 엔진(renderEngine)이 단독 소유.
-  // 여기서 건드리면 엔진 판정과 충돌해 새로고침마다 깜빡임 → 의도적으로 손대지 않음.
+  setV('vRegime',regCls,regLab);setV('vTrend',trCls,trLab);setV('vTiming',tmCls,tmLab);
   const vr=document.getElementById('vRegime');
-  if(reg.risk)vr.classList.add('risk-pulse'); else vr.classList.remove('risk-pulse');
+  if(riskOff)vr.classList.add('risk-pulse');else vr.classList.remove('risk-pulse');
+
+  // bbnote: 엔진 기반 행동지침
   let note;
-  if(reg.tier==='RED')note='<b>리스크-오프:</b> 매수 신호 무시. 보유분 축소·청산 우선.';
-  else if(!tr.pass)note='<b>추세 훼손:</b> 추격매수 금지. 단타만, 20MA 회복 실패 시 청산.';
+  if(riskOff)note='<b>고위험·리스크-오프:</b> 엔진이 비중 축소 권고. 신규 매수 보수적, 보유분 점검.';
+  else if(e&&e.regime==='하락추세')note='<b>하락추세:</b> 추격매수 금지. 반등 단타만, 빠른 손절.';
   else note='<b>추세 유효:</b> 상단=분할익절, 하단~중심 눌림=분할 매수. 과매수는 매도신호 아님(밴드타기).';
   document.getElementById('bbnote').innerHTML=note;
+
+  // 경고 플래그 (엔진 + 기술적 경고)
   const fl=[];
-  if(reg.tier==='RED')fl.push(['danger','T0 리스크',(reg.reasons.join(' · ')||'거시 위험')+' → <b>비중 축소 1순위</b>(상위 티어 우선).']);
+  if(e&&e.macro&&e.macro.hard)fl.push(['danger','매크로 하드게이트',e.macro.hard+' → <b>엔진 비중 강제 축소</b>.']);
+  else if(e&&e.risk>=60)fl.push(['danger','고위험','엔진 리스크 '+e.risk+' → 비중 축소 우선.']);
   if(s.dtop)fl.push(['danger','더블탑 의심','휴리스틱 감지 — 데드캣 가능성. 직접 확인 후 보수적 대응.']);
   if((s.bigdown||0)>=1)fl.push(['warn','장대음봉',s.bigdown+'개 — 분배(매도압력). 익절·헷지 고려.']);
   if(Math.abs(s.ext20||0)>=St.extMax)fl.push(['warn','이격 과열','20MA 이격 '+s.ext20+'% — 평균회귀 위험. 추격매수 금지.']);
-  if(s.diver==='bear'&&tr.longOk)fl.push(['warn','약세 다이버전스','추세 둔화 — 신규 중단·분할익절.']);
+  if(s.diver==='bear'&&e&&e.regime!=='하락추세')fl.push(['warn','약세 다이버전스','추세 둔화 — 신규 중단·분할익절.']);
   if(ob&&s.bbpos==='above')fl.push(['warn','상단 과매수','신규 풀매수 자제, 분할 익절.']);
   if(s.bbwidth==='squeeze')fl.push(['info','BB 스퀴즈','변동성 수축 — 돌파 방향 확인 후 진입.']);
+  state.flags=fl;
   const box=document.getElementById('flags');
   box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 리스크 없음 — 신호 정렬 양호</div>';
+  renderFlagTicker();
 }
 /* ---------- 관심종목 + 종목 검색 ---------- */
 const PINNED=['TQQQ','SOXL'];
@@ -1365,12 +1377,21 @@ function renderSummary(s){
     +"</span><span class='sg "+x.signal+"'>"+sgLabel(x.signal)+"</span></div>").join('');
   tbl('tOsc',s.oscillators); tbl('tMa',s.mas);
 }
+function renderFlagTicker(){
+  const inner=document.getElementById('flagTapeInner'); if(!inner)return;
+  const fl=state.flags||[];
+  const items=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
+    :["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"];
+  // 끊김 없는 무한 스크롤 위해 2벌 복제
+  inner.innerHTML=items.concat(items).join('');
+}
 function renderCrosses(list){
   const el=document.getElementById('crossList');
   if(!list||!list.length){el.innerHTML="<div class='none'>최근 크로스 신호 없음</div>";return;}
+  const fmtD=d=>{const p=(d||'').split('-');return p.length===3?(+p[1])+'월 '+(+p[2])+'일':d;};
   el.innerHTML=list.map(s=>
     "<div class='si'><span class='tier "+s.side+"'>"+s.name+"</span>"
-    +"<span class='snm'>"+(s.kind==='golden'?'골든':'데드')+"크로스 "+s.pair+" · "+s.bars_ago+"봉 전"+(s.aligned?'':' · 추세역행')+"</span>"
+    +"<span class='snm'>"+(s.kind==='golden'?'골든':'데드')+"크로스 "+s.pair+" · "+fmtD(s.date)+" · "+s.bars_ago+"봉 전"+(s.aligned?'':' · 추세역행')+"</span>"
     +"<span class='cf'>"+s.confidence+"%</span></div>").join('');
 }
 const PATTERN_DESC={
@@ -1401,10 +1422,11 @@ function renderCandles(list){
     text:p.name}));
   if(!list||!list.length){el.innerHTML="<div class='none'>최근 캔들 패턴 없음</div>";updateMarkers();return;}
   const sCol=k=>k==='bull'?C.up:k==='bear'?C.down:C.muted;
+  const fmtD=d=>{const p=(d||'').split('-');return p.length===3?(+p[1])+'월 '+(+p[2])+'일':d;};
   el.innerHTML=list.map(p=>
     "<div class='pat' data-date='"+p.date+"'>"
     +"<div class='prow'><span class='tier "+p.kind+"'>"+(p.kind==='bull'?'매수':p.kind==='bear'?'매도':'중립')+"</span>"
-    +"<span class='snm'>"+p.name+"</span><span class='pago'>"+p.bars_ago+"봉 전 →</span></div>"
+    +"<span class='snm'>"+p.name+"</span><span class='pago'>"+fmtD(p.date)+" · "+p.bars_ago+"봉 전 →</span></div>"
     +"<div class='pdesc'>"+(PATTERN_DESC[p.name]||'')+"</div>"
     +"<div class='pstr'><div class='pbar'><i style='width:"+p.confidence+"%;background:"+sCol(p.kind)+"'></i></div><span>강도 "+p.confidence+"</span></div>"
     +"</div>").join('');
