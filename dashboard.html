@@ -146,12 +146,17 @@
   .stat .v{font-family:var(--mono);font-weight:700;font-size:17px}
   .stat .v.pos{color:var(--go)} .stat .v.neg{color:var(--stop)}
   .stat .l{font-size:10.5px;color:var(--muted);margin-top:3px}
-  #btEquity{height:200px;margin-top:6px}
-  #vEquity{height:200px;margin-top:6px}
+  #qEquity{height:210px;margin-top:6px}
   .wftab{width:100%;border-collapse:collapse;margin:10px 0;font-family:var(--mono);font-size:11px}
   .wftab th,.wftab td{padding:6px 8px;border-bottom:1px solid var(--panel2);text-align:right}
   .wftab th:first-child,.wftab td:first-child{text-align:left;color:var(--muted)}
   .wfverdict{font-family:var(--mono);font-size:11.5px;margin:6px 0}
+  .qsub2{font-family:var(--disp);font-size:12.5px;font-weight:600;color:var(--ink);margin:16px 0 4px}
+  .qsub2 .hint{font-family:var(--body);font-size:10px;font-weight:400;color:var(--faint);margin-left:6px}
+  .heat{border-collapse:collapse;font-family:var(--mono);font-size:11px;margin:8px 0}
+  .heat th{padding:4px 7px;color:var(--muted);font-weight:600;text-align:center}
+  .heat th.hcorner{color:var(--faint);font-size:9.5px;text-align:right}
+  .heat td{padding:5px 9px;text-align:center;color:#0a0a0c;font-weight:700;border:1px solid var(--bg)}
   .mc{margin-top:12px}
   .mc .mcrow{display:flex;gap:14px;font-family:var(--mono);font-size:11.5px;margin-bottom:8px;flex-wrap:wrap}
   .mchist{display:flex;align-items:flex-end;gap:3px;height:60px;margin-top:4px}
@@ -534,33 +539,25 @@
     <div id="seaMonths" class="btnote" style="margin-top:8px"></div>
   </div>
   <div class="bt">
-    <h3>백테스트</h3>
-    <div class="sub">규칙: MACD 골든크로스 + 종가가 추세선(SMA) 위일 때 매수 / 데드크로스 매도 (롱 온리, 신호 시 전량). 차트의 매수·매도 화살표와 동일한 규칙입니다.</div>
-    <div class="btbar">
-      <label>추세선 SMA</label>
-      <select id="btMa"><option value="50">50</option><option value="120">120</option><option value="200" selected>200</option></select>
-      <button class="minibtn" id="btRun">백테스트 실행</button>
-      <span class="btnote" id="btPeriod"></span>
-    </div>
-    <div class="stats" id="btStats"></div>
-    <div id="btEquity"></div>
-    <div class="btnote">파란선=전략 자산곡선. 과거 성과가 미래를 보장하지 않으며, 거래비용·세금·슬리피지·레버리지 부식은 단순화되어 있습니다.</div>
-  </div>
-
-  <div class="bt">
-    <h3>전략 검증 <span class="ssub">엔진(연속 비중) · 거래비용·워크포워드·몬테카를로</span></h3>
-    <div class="sub">엔진의 권장 비중을 과거에 그대로 적용했을 때의 성과. 단순 규칙이 아니라 추세추종+변동성타겟팅 비중을 매일 반영합니다.</div>
+    <h3>퀀트 백테스트 <span class="ssub">라이브 엔진과 '동일 코어'(strategy.exposure_core) · T+1 시가체결 · 비용·운용보수 반영</span></h3>
+    <div class="sub">화면 최종판정의 권장 비중 로직을 과거에 그대로 적용. 종가에서 결정 → 익일 시가 체결(미래참조 없음). 거래비용·레버리지 ETF 운용보수 차감. <b>매크로(VIX·공포탐욕)는 백테스트에 미반영</b>(신뢰할 무료 과거 데이터 부재) — 가격 기반 코어만 검증합니다.</div>
     <div class="btbar">
       <label>거래비용(bps)</label>
-      <select id="vCost"><option value="0">0</option><option value="5" selected>5</option><option value="10">10</option></select>
-      <button class="minibtn" id="vRun">검증 실행</button>
-      <span class="btnote" id="vPeriod"></span>
+      <select id="qCost"><option value="0">0</option><option value="5" selected>5</option><option value="10">10</option><option value="20">20</option></select>
+      <label>운용보수(%/년)</label>
+      <select id="qExp"><option value="0">0</option><option value="0.75">0.75</option><option value="0.95" selected>0.95</option></select>
+      <button class="minibtn" id="qRun">백테스트 실행</button>
+      <span class="btnote" id="qPeriod"></span>
     </div>
-    <div class="stats" id="vStats"></div>
-    <div id="vEquity"></div>
-    <div id="vWf"></div>
-    <div id="vMc"></div>
-    <div class="btnote">전략 vs 매수후보유. 워크포워드=인샘플에서 고른 설정을 아웃오브샘플에 적용(과적합 점검). 몬테카를로=블록 부트스트랩으로 낙폭/수익 분포 추정.</div>
+    <div class="stats" id="qStats"></div>
+    <div id="qEquity"></div>
+    <div class="qsub2">롤링 워크포워드 <span class="hint">인샘플에서 파라미터 최적화 → 아웃오브샘플 적용(과적합 점검)</span></div>
+    <div id="qWf"></div>
+    <div class="qsub2">파라미터 견고성 <span class="hint">색이 고르면 특정 값에 민감하지 않다는 뜻(평원). 최적값 찾기가 아니라 견고성 확인이 목적</span></div>
+    <div id="qRob"></div>
+    <div class="qsub2">몬테카를로 <span class="hint">블록 부트스트랩 — 최대낙폭·수익 분포</span></div>
+    <div id="qMc"></div>
+    <div class="btnote">과거 성과는 미래를 보장하지 않습니다. 양도소득세(연단위·실현기준)는 미반영, 무료 데이터의 배당·분할 조정 불완전으로 약간 낙관 편향이 있을 수 있습니다. 파라미터 '최적값'은 과적합 위험이 있어 제시하지 않으며, 평원·아웃오브샘플 유지로 견고성만 평가합니다.</div>
   </div>
   <div class="journal">
     <h3>매매 일지</h3>
@@ -609,7 +606,7 @@ const state={ticker:'TQQQ',range:'1Y',interval:'1day',osc:'rsi',
   watchlist:['TQQQ','SOXL'],
   journal:loadLS('matilda_journal',[])};
 let priceChart,oscChart,candle,vol,S={},oscSeries={},syncing=false;
-let btChart=null,btSeries=null;
+let qChart=null,qS1=null,qS2=null;
 
 function makeCharts(){
   if(typeof LightweightCharts==='undefined')return false;
@@ -1177,93 +1174,76 @@ function renderFngTimeline(s){
   fngTlChart.timeScale().fitContent();
 }
 
-/* ---------- 백테스트 ---------- */
-function makeBtChart(){
-  if(btChart||typeof LightweightCharts==='undefined')return;
-  btChart=LightweightCharts.createChart(document.getElementById('btEquity'),{
-    layout:{background:{color:'transparent'},textColor:C.ink,fontFamily:"'JetBrains Mono',monospace"},
-    grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
-    rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:200});
-  btSeries=btChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(77,136,255,.25)',bottomColor:'rgba(77,136,255,.02)',lineWidth:2,priceLineVisible:false});
-  window.addEventListener('resize',()=>btChart&&btChart.applyOptions({width:document.getElementById('btEquity').clientWidth}));
-}
+/* ---------- 퀀트 백테스트 ---------- */
 function statCard(v,label,signed){
   const cls=signed?(v>=0?'pos':'neg'):'';
   const txt=signed?(v>=0?'+':'')+v+'%':v;
   return '<div class="stat"><div class="v '+cls+'">'+txt+'</div><div class="l">'+label+'</div></div>';
 }
-async function runBacktest(){
-  const ma=document.getElementById('btMa').value;
-  const btn=document.getElementById('btRun'); btn.disabled=true; btn.textContent='실행 중…';
-  try{
-    const d=await (await fetch('/backtest/'+state.ticker+'?trend_ma='+ma)).json();
-    if(d.error)throw new Error(d.error);
-    const s=d.stats;
-    document.getElementById('btPeriod').textContent=state.ticker+' · '+s.period+' · 추세선 SMA'+s.trend_ma;
-    document.getElementById('btStats').innerHTML=
-      statCard(s.total_return,'전략 수익률',true)+
-      statCard(s.bh_return,'매수후보유',true)+
-      statCard(s.win_rate+'%','승률',false)+
-      statCard(s.n_trades,'매매 횟수',false)+
-      statCard(s.max_dd,'최대 낙폭',true)+
-      statCard(s.avg_win,'평균 수익',true)+
-      statCard(s.avg_loss,'평균 손실',true)+
-      statCard('$'+s.final.toLocaleString(),'최종 자산',false);
-    makeBtChart();
-    if(btSeries)btSeries.setData(d.equity);
-    if(btChart)btChart.timeScale().fitContent();
-  }catch(e){
-    document.getElementById('btStats').innerHTML='<div class="btnote" style="color:var(--stop)">실패: '+e.message+'</div>';
-  }finally{ btn.disabled=false; btn.textContent='백테스트 실행'; }
-}
-document.getElementById('btRun').onclick=runBacktest;
-
-/* ---------- 전략 검증 (Phase 3) ---------- */
-let vChart=null,vS1=null,vS2=null;
-function makeVChart(){
-  if(vChart||typeof LightweightCharts==='undefined')return;
-  vChart=LightweightCharts.createChart(document.getElementById('vEquity'),{
+function makeQChart(){
+  if(qChart||typeof LightweightCharts==='undefined')return;
+  qChart=LightweightCharts.createChart(document.getElementById('qEquity'),{
     layout:{background:{color:'transparent'},textColor:C.ink,fontFamily:"'JetBrains Mono',monospace"},
     grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
-    rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:200});
-  vS1=vChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(77,136,255,.25)',bottomColor:'rgba(77,136,255,.02)',lineWidth:2,priceLineVisible:false});
-  vS2=vChart.addLineSeries({color:C.faint,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-  window.addEventListener('resize',()=>vChart&&vChart.applyOptions({width:document.getElementById('vEquity').clientWidth}));
+    rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:210});
+  qS1=qChart.addAreaSeries({lineColor:C.steel,topColor:'rgba(77,136,255,.20)',bottomColor:'rgba(77,136,255,.01)',lineWidth:2,priceLineVisible:false});
+  qS2=qChart.addLineSeries({color:C.faint,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  window.addEventListener('resize',()=>qChart&&qChart.applyOptions({width:document.getElementById('qEquity').clientWidth}));
 }
-async function runValidate(){
-  const cost=document.getElementById('vCost').value;
-  const btn=document.getElementById('vRun');btn.disabled=true;btn.textContent='검증 중…';
+function heatColor(v,lo,hi){ // Sharpe → 빨강(낮음)~회색~초록(높음)
+  if(hi-lo<1e-6)return 'rgba(120,120,128,.5)';
+  const t=Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
+  const r=Math.round(242-(242-38)*t), g=Math.round(54+(194-54)*t), b=Math.round(69+(129-69)*t);
+  return 'rgb('+r+','+g+','+b+')';
+}
+async function runQuant(){
+  const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
+  const btn=document.getElementById('qRun');btn.disabled=true;btn.textContent='실행 중…';
   try{
-    const d=await (await fetch('/validate/'+state.ticker+'?cost='+cost)).json();
+    const d=await (await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp)).json();
     if(d.error)throw new Error(d.error);
     const s=d.stats;
-    document.getElementById('vPeriod').textContent=state.ticker+' · '+s.period;
-    document.getElementById('vStats').innerHTML=
+    document.getElementById('qPeriod').textContent=state.ticker+' · '+s.period+' · '+s.bars+'봉 · 비용'+s.cost_bps+'bps · 보수'+(s.expense*100).toFixed(2)+'%';
+    document.getElementById('qStats').innerHTML=
       statCard(s.total,'전략 총수익',true)+statCard(s.bh_total,'매수후보유',true)+
-      statCard(s.cagr,'CAGR',true)+statCard(s.sharpe,'샤프',false)+
-      statCard(s.mdd,'전략 MDD',true)+statCard(s.bh_mdd,'보유 MDD',true)+
-      statCard(s.vol+'%','변동성',false)+statCard(s.avg_expo+'%','평균노출',false);
-    makeVChart(); if(vS1)vS1.setData(d.equity); if(vS2)vS2.setData(d.bh);
-    if(vChart)vChart.timeScale().fitContent();
+      statCard(s.cagr,'CAGR',true)+statCard(s.sharpe,'샤프',false)+statCard(s.sortino,'소르티노',false)+
+      statCard(s.mdd,'전략 MDD',true)+statCard(s.bh_mdd,'보유 MDD',true)+statCard(s.calmar,'칼마',false)+
+      statCard(s.vol+'%','변동성',false)+statCard(s.avg_expo+'%','평균노출',false)+
+      statCard(s.time_in+'%','시장체류',false)+statCard(s.turnover_yr,'연회전율',false);
+    makeQChart(); if(qS1)qS1.setData(d.equity); if(qS2)qS2.setData(d.bh);
+    if(qChart)qChart.timeScale().fitContent();
+    // 워크포워드
     const wf=d.walk_forward;
-    let html="<table class='wftab'><tr><th>목표변동성</th><th>IS샤프</th><th>OOS샤프</th><th>IS수익</th><th>OOS수익</th></tr>";
-    wf.rows.forEach(r=>{const best=r.target_vol===wf.best.target_vol;
-      html+="<tr"+(best?" style='color:var(--steel)'":"")+"><td>"+r.target_vol+(best?' ★':'')+"</td><td>"+r.is_sharpe+"</td><td>"+r.oos_sharpe+"</td><td>"+r.is_ret+"%</td><td>"+r.oos_ret+"%</td></tr>";});
-    html+="</table><div class='wfverdict'>아웃오브샘플 분기: "+wf.split_date+" · 판정: <b>"+wf.verdict+"</b></div>";
-    document.getElementById('vWf').innerHTML=html;
+    if(wf&&!wf.error){
+      let html="<table class='wftab'><tr><th>Fold</th><th>OOS 기간</th><th>최적 tv·acute</th><th>IS샤프</th><th>OOS샤프</th><th>OOS수익</th></tr>";
+      wf.rows.forEach(r=>{html+="<tr><td>"+r.fold+"</td><td style='color:var(--faint)'>"+r.oos_period+"</td><td>"+r.best_tv+" · "+r.best_acute+"</td><td>"+r.is_sharpe+"</td><td>"+r.oos_sharpe+"</td><td>"+r.oos_ret+"%</td></tr>";});
+      html+="</table><div class='wfverdict'>OOS 종합 샤프 <b>"+wf.oos_sharpe+"</b> (IS 평균 "+wf.is_avg_sharpe+") · OOS 누적 "+wf.oos_total+"% · 판정: <b style='color:"+(wf.verdict.indexOf('견고')>=0?'var(--go)':'var(--caution)')+"'>"+wf.verdict+"</b></div>";
+      document.getElementById('qWf').innerHTML=html;
+    }else document.getElementById('qWf').innerHTML="<div class='btnote' style='color:var(--caution)'>"+((wf&&wf.error)||'워크포워드 불가')+"</div>";
+    // 견고성 히트맵
+    const rb=d.robustness;
+    if(rb){
+      let h="<table class='heat'><tr><th class='hcorner'>acute＼tv</th>";
+      rb.x.forEach(x=>h+="<th>"+x+"</th>"); h+="</tr>";
+      rb.z.forEach((row,i)=>{h+="<tr><th>"+rb.y[i]+"</th>";
+        row.forEach(v=>{h+="<td style='background:"+heatColor(v,rb.min,rb.max)+"'>"+v.toFixed(2)+"</td>";}); h+="</tr>";});
+      h+="</table><div class='btnote'>샤프 범위 "+rb.min.toFixed(2)+"~"+rb.max.toFixed(2)+" (폭 "+rb.spread.toFixed(2)+") — 폭이 좁고 색이 고를수록 견고(평원).</div>";
+      document.getElementById('qRob').innerHTML=h;
+    }
+    // 몬테카를로
     const mc=d.monte_carlo;
     if(mc&&!mc.error){
-      const h=mc.mdd_hist, mx=Math.max.apply(null,h.counts.concat([1]));
-      const bars=h.counts.map(c=>"<div class='mb' style='height:"+Math.round(c/mx*100)+"%'></div>").join('');
-      document.getElementById('vMc').innerHTML=
+      const hh=mc.mdd_hist, mx=Math.max.apply(null,hh.counts.concat([1]));
+      const bars=hh.counts.map(c=>"<div class='mb' style='height:"+Math.round(c/mx*100)+"%'></div>").join('');
+      document.getElementById('qMc').innerHTML=
         "<div class='mc'><div class='mcrow'><span>최종수익 — 비관 p5 <b>"+mc.final.p5+"%</b></span><span>중앙 <b>"+mc.final.p50+"%</b></span><span>낙관 p95 <b>"+mc.final.p95+"%</b></span></div>"
-        +"<div class='mcrow'><span>최대낙폭 — 중앙 <b>"+mc.mdd.p50+"%</b></span><span>최악 <b style='color:var(--stop)'>"+mc.mdd.worst+"%</b></span><span style='color:var(--faint)'>("+mc.n_sims+"회 시뮬)</span></div>"
+        +"<div class='mcrow'><span>최대낙폭 — 중앙 <b>"+mc.mdd.p50+"%</b></span><span>최악 <b style='color:var(--stop)'>"+mc.mdd.worst+"%</b></span><span style='color:var(--faint)'>("+mc.n_sims+"회·블록"+mc.block+")</span></div>"
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
-    }else document.getElementById('vMc').innerHTML='';
-  }catch(e){document.getElementById('vStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
-  finally{btn.disabled=false;btn.textContent='검증 실행';}
+    }else document.getElementById('qMc').innerHTML='';
+  }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
+  finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
-document.getElementById('vRun').onclick=runValidate;
+document.getElementById('qRun').onclick=runQuant;
 
 /* ---------- 계절성 차트 (SVG) ---------- */
 const MON=['1','2','3','4','5','6','7','8','9','10','11','12'];

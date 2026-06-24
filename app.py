@@ -102,8 +102,8 @@ def chart(ticker):
         df, source = _load(ticker, interval)
         payload = compute_series(df)
         payload["signals"] = compute_signals(df)
-        import backtest as bt
-        payload["markers"] = bt.markers_from_signals(df, bt.generate_signals(df))
+        import patterns as _pat0
+        payload["markers"] = _pat0.detect_macd_markers(df)
         # 매크로(VIX·공포탐욕): 쿼리 오버라이드 우선, 없으면 서버 캐시(시장심리) 사용
         def _argf(name):
             v = request.args.get(name)
@@ -152,25 +152,29 @@ def chart(ticker):
         return jsonify({"error": str(e), "ticker": ticker}), 500
 
 
-@app.route("/backtest/<ticker>")
-def backtest_route(ticker):
+@app.route("/quant/<ticker>")
+def quant_route(ticker):
     ticker = ticker.upper()
     from public_data import valid_ticker
     if not valid_ticker(ticker):
         return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
-    from flask import request
     try:
-        trend_ma = int(request.args.get("trend_ma", 200))
+        cost = float(request.args.get("cost", 5))
     except ValueError:
-        trend_ma = 200
-    trend_ma = max(20, min(trend_ma, 250))
+        cost = 5.0
     try:
-        df, source = _load(ticker)
-        import backtest as bt
-        res = bt.run(df, trend_ma=trend_ma)
+        expense = float(request.args.get("expense", 0.95)) / 100.0   # % → 분수
+    except ValueError:
+        expense = 0.0095
+    try:
+        df, source = _load(ticker, "1day")   # 백테스트는 항상 일봉
+        import quant as Q
+        res = Q.analyze(df, cost_bps=cost, expense=expense)
+        res.pop("ret", None)  # 직렬화 불가 Series 제거(내부용)
         res["meta"] = {"ticker": ticker, "source": source}
         return jsonify(res)
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e), "ticker": ticker}), 500
 
 
@@ -318,27 +322,6 @@ def sentiment_route():
         from sentiment import cnn_sentiment
         return jsonify(cnn_sentiment())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/validate/<ticker>")
-def validate_route(ticker):
-    ticker = ticker.upper()
-    from public_data import valid_ticker
-    if not valid_ticker(ticker):
-        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
-    try:
-        cost = float(request.args.get("cost", 5))
-    except ValueError:
-        cost = 5.0
-    try:
-        df, source = _load(ticker)
-        import backtest_engine as be
-        res = be.analyze(df, cost_bps=cost)
-        res["meta"] = {"ticker": ticker, "source": source}
-        return jsonify(res)
-    except Exception as e:
-        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 

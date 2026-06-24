@@ -182,3 +182,23 @@ def detect_candles(df: pd.DataFrame, scan: int = 12):
             continue
         seen.add(key); uniq.append(p)
     return uniq[:8]
+
+
+def detect_macd_markers(df):
+    """차트용 MACD 골든/데드 크로스 진입·청산 마커 (추세선 위에서만 진입).
+    (구 backtest.py 의 규칙을 차트 마커 용도로만 유지 — 백테스트 로직은 quant.py 로 일원화됨)"""
+    from indicators import macd
+    close = df["close"].reset_index(drop=True)
+    line, sig, _ = macd(close)
+    sma = close.rolling(200).mean()
+    cu = (line > sig) & (line.shift(1) <= sig.shift(1))
+    cd = (line < sig) & (line.shift(1) >= sig.shift(1))
+    dates = df["date"].astype(str).tolist()
+    out, pos = [], False
+    for i in range(len(df)):
+        trend_ok = (not np.isnan(sma.iloc[i])) and close.iloc[i] > sma.iloc[i]
+        if (not pos) and cu.iloc[i] and trend_ok:
+            out.append({"time": dates[i], "position": "belowBar", "color": UP, "shape": "arrowUp", "text": "B"}); pos = True
+        elif pos and cd.iloc[i]:
+            out.append({"time": dates[i], "position": "aboveBar", "color": DN, "shape": "arrowDown", "text": "S"}); pos = False
+    return out
