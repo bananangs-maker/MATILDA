@@ -257,6 +257,34 @@ def compute_signals(df: pd.DataFrame) -> dict:
     press = _safe_last((upv / tot.replace(0, np.nan)) * 100)
     pressure = round(press, 0) if not np.isnan(press) else 50
 
+    # --- 가격 기반 리스크 (급락 / 낙폭 / 이격 / 장대음봉 / 더블탑) ---
+    ret1 = float(close.pct_change().iloc[-1] * 100) if len(close) > 1 else 0.0
+    roll_hi20 = _safe_last(close.rolling(20).max())
+    dd20 = ((c_last / roll_hi20) - 1) * 100 if roll_hi20 else 0.0
+    sma20v = _safe_last(sma20)
+    ext20 = ((c_last - sma20v) / sma20v * 100) if sma20v else 0.0
+    rngs = (df["high"] - df["low"])
+    atr = rngs.rolling(14).mean()
+    big_down = 0
+    for i in range(max(0, len(df) - 5), len(df)):
+        rng_i = float(df["high"].iloc[i] - df["low"].iloc[i])
+        body = float(df["open"].iloc[i] - df["close"].iloc[i])  # 양수=음봉
+        a = atr.iloc[i]
+        if body > 0 and rng_i > 0 and not np.isnan(a) and rng_i > a * 1.6 and body > rng_i * 0.55:
+            big_down += 1
+    # 더블탑 휴리스틱: 최근 60봉 내 비슷한 두 고점 + 그 사이 골 + 현재 둘째 고점 아래
+    dtop = False
+    if len(close) >= 50:
+        seg = close.iloc[-60:].reset_index(drop=True)
+        hs, _ = _swings(seg, 3)
+        if len(hs) >= 2:
+            a, b = hs[-2], hs[-1]
+            pa, pb = seg[a], seg[b]
+            trough = seg[a:b].min() if b > a else pa
+            if abs(pa - pb) / max(pa, pb) < 0.05 and (min(pa, pb) - trough) / min(pa, pb) > 0.04 \
+               and c_last < pb:
+                dtop = True
+
     return {
         "ma180": ma180,
         "ltcross": ltcross,
@@ -270,6 +298,11 @@ def compute_signals(df: pd.DataFrame) -> dict:
         "cci": round(_safe_last(cci20), 0),
         "diver": diver,
         "pressure": pressure,
+        "ret1": round(ret1, 1),
+        "dd20": round(dd20, 1),
+        "ext20": round(ext20, 1),
+        "bigdown": int(big_down),
+        "dtop": bool(dtop),
         # 참고용 원시값
         "_price": round(c_last, 2),
         "_pctB": round(pb, 3) if not np.isnan(pb) else None,

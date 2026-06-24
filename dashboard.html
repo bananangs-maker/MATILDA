@@ -48,6 +48,10 @@
   .deck{display:flex;flex-direction:column;gap:12px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:14px 15px}
   .card.final{background:linear-gradient(180deg,var(--panel2),var(--panel));border-color:var(--steel)}
+  @keyframes breathe{0%,100%{opacity:1}50%{opacity:.4}}
+  .risk-pulse{animation:breathe 1.15s ease-in-out infinite}
+  @keyframes riskglow{0%,100%{box-shadow:inset 0 0 0 1px var(--stop),0 0 0 rgba(255,90,77,0)}50%{box-shadow:inset 0 0 0 1px var(--stop),0 0 20px rgba(255,90,77,.5)}}
+  .card.final.risk-on{border-color:var(--stop);animation:riskglow 1.5s ease-in-out infinite}
   .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
   .final .lab{color:var(--steel)}
   .call{font-family:var(--disp);font-weight:700;font-size:17px;line-height:1.35}
@@ -182,6 +186,7 @@
         <button data-m="edit">편집</button>
         <button data-m="hline">수평선</button>
         <button data-m="trend">추세선</button>
+        <button data-m="channel">채널</button>
         <button data-m="_clear">전체 삭제</button>
         <span class="ds" id="drawStatus"></span>
       </div>
@@ -243,6 +248,9 @@
             <div class="nf"><span>상한 GREEN%</span><input type="number" data-set="ceilG"></div>
             <div class="nf"><span>상한 AMBER%</span><input type="number" data-set="ceilA"></div>
             <div class="nf"><span>상한 RED%</span><input type="number" data-set="ceilR"></div>
+            <div class="nf"><span>급락일 ≤-%</span><input type="number" data-set="crashDay"></div>
+            <div class="nf"><span>고점낙폭 ≤-%</span><input type="number" data-set="crashDD"></div>
+            <div class="nf"><span>이격 과열 ≥%</span><input type="number" data-set="extMax"></div>
           </div>
           <button class="reset" id="setReset">기본값 복원</button>
         </details>
@@ -307,7 +315,8 @@
 const C={ink:'#EAEEF6',grid:'#1E2632',border:'#2B3442',
   up:'#3DD68C',down:'#FF5A4D',steel:'#6AA9FF',amber:'#F2B233',purple:'#C792EA',faint:'#9aa7bd',
   go:'#3DD68C',bb:'#6AA9FF',cream:'#EAEEF6'};
-const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:22,vixRed:30,fngHot:80,ceilG:100,ceilA:55,ceilR:25};
+const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:20,vixRed:28,fngHot:78,
+  ceilG:80,ceilA:40,ceilR:12, crashDay:7,crashDD:12,extMax:18};
 function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
@@ -403,64 +412,94 @@ async function load(){
     st.textContent='실패: '+e.message+' — python app.py 실행 여부 확인';
   }
 }
-function regime(){const v=state.macro.vix,f=state.macro.fng,S2=state.settings;
+// T0 레짐: 거시(VIX/FNG) + 가격 리스크(급락/낙폭). pass = !RED
+function regime(){
+  const s=state.signals||{}, S2=state.settings, v=state.macro.vix, f=state.macro.fng;
   let tier=v>=S2.vixRed?'RED':v>=S2.vixAmber?'AMBER':'GREEN';
   if(f>=S2.fngHot&&tier==='GREEN')tier='AMBER';
+  const reasons=[]; const ret1=s.ret1||0, dd=s.dd20||0; let pr='none';
+  if(ret1<=-S2.crashDay){pr='RED';reasons.push('전일 '+ret1+'%');}
+  else if(ret1<=-S2.crashDay*0.6){pr='AMBER';reasons.push('전일 '+ret1+'%');}
+  if(dd<=-S2.crashDD){pr='RED';reasons.push('고점낙폭 '+dd+'%');}
+  else if(dd<=-S2.crashDD*0.6&&pr!=='RED'){pr=pr==='none'?'AMBER':pr;reasons.push('고점낙폭 '+dd+'%');}
+  if(pr==='RED')tier='RED'; else if(pr==='AMBER'&&tier==='GREEN')tier='AMBER';
   const ceil=tier==='GREEN'?S2.ceilG:tier==='AMBER'?S2.ceilA:S2.ceilR;
-  const label={GREEN:'리스크-온',AMBER:'경계',RED:'리스크-오프'}[tier];return{tier,ceil,label};}
-function trend(s){const longOk=s.ma180==='above'&&s.ltcross!=='bear';
-  const hardBear=s.ma180==='below'&&s.ltcross==='bear';
+  return {tier,ceil,label:{GREEN:'리스크-온',AMBER:'경계',RED:'리스크-오프'}[tier],reasons,risk:tier==='RED'};
+}
+// T1/T2 추세+건전성. pass = longOk && conf>=1 && damage<=1
+function trend(s){
+  const S2=state.settings;
+  const longOk=s.ma180==='above'&&s.ltcross!=='bear';
+  const hardBear=s.ma180==='below'||s.ltcross==='bear';
   let conf=0;conf+=s.macd==='golden'?1:s.macd==='death'?-1:0;
   conf+=s.multima==='bull'?1:s.multima==='bear'?-1:0;conf+=s.sar==='long'?1:-1;
-  let v,size;if(longOk&&conf>=2){v='GREEN';size=1;}else if(longOk&&conf>=0){v='AMBER';size=.6;}
-  else if(longOk){v='AMBER';size=.4;}else if(hardBear){v='RED';size=.2;}else{v='AMBER';size=.4;}
-  return{v,size,longOk,hardBear};}
+  const dmg=[];
+  if(Math.abs(s.ext20||0)>=S2.extMax)dmg.push('이격 '+s.ext20+'%');
+  if((s.bigdown||0)>=1)dmg.push('장대음봉 '+s.bigdown);
+  if(s.dtop)dmg.push('더블탑 의심');
+  if(s.diver==='bear')dmg.push('약세 다이버전스');
+  if(s.macd==='death')dmg.push('MACD 데드');
+  const pass=longOk&&conf>=1&&dmg.length<=1;
+  const sf=!pass?0:(conf>=3&&dmg.length===0?1.0:conf>=2&&dmg.length===0?0.8:0.55);
+  return {pass,longOk,hardBear,conf,dmg,sf};
+}
 function decide(){
   const s=state.signals; if(!s)return;
-  const reg=regime(),tr=trend(s);
-  const up=tr.longOk, St=state.settings, ob=s.rsi>=St.rsiOB||s.mfi>=St.mfiOB;
-  let tmv,tmp;
-  if(up){if(s.bbpos==='above'){tmv='GREEN';tmp=reg.tier==='GREEN'?'상단 돌파+강세 레짐=밴드타기':'상단이나 레짐 경계=분할익절';}
-    else if(s.bbpos==='upper'){tmv='GREEN';tmp='중심~상단, 보유·소량 추가';}
-    else if(s.bbpos==='mid'||s.bbpos==='lower'){tmv='GREEN';tmp='눌림목, 분할 매수 기회';}
-    else{tmv='AMBER';tmp='하단 이탈, 반등 확인 후';}}
-  else{if(s.bbpos==='below'&&s.diver==='bull'){tmv='AMBER';tmp='하단+강세 다이버전스=반등 단타(소액)';}
-    else{tmv='RED';tmp='약세 환경, 진입 보류';}}
-  const size=Math.round(reg.ceil*tr.size);
-  const setV=(id,v,t)=>{const e=document.getElementById(id);e.className='v '+v;e.textContent=t;};
-  setV('vRegime',reg.tier,reg.label);
-  setV('vTrend',tr.longOk?'GREEN':tr.hardBear?'RED':'AMBER',tr.longOk?'롱 허가':tr.hardBear?'롱 불가':'관망');
-  setV('vTiming',tmv,tmv==='GREEN'?'진입':tmv==='AMBER'?'조건부':'대기');
-  let call,detail;
-  if(reg.tier==='RED'){call='비중 축소 / 신규 금지';detail='거시 불리. 변동성 부식 회피 우선.';}
-  else if(tr.hardBear){call='롱 비허가 — 반등 단타만';detail='장기·중기 하락. 저항/SAR 빠른 청산.';}
-  else if(tmv==='GREEN'&&tr.v==='GREEN'&&reg.tier==='GREEN'){call='추세추종 — 비중 '+size+'%';detail='전 티어 정렬. 불타기 유효.';}
-  else if(tmv==='GREEN'&&size>=35){call='분할 진입 — 비중 '+size+'%';detail='추세 우호적, 분할로 평단 관리.';}
-  else if(tmv==='AMBER'){call='조건부 — 한도 '+size+'%';detail='확인 신호 후 분할 진입.';}
-  else{call='관망';detail='티어 신호 불일치.';}
+  const St=state.settings, reg=regime(), tr=trend(s);
+  const ob=s.rsi>=St.rsiOB||s.mfi>=St.mfiOB;
+  const timing=()=>{
+    if(s.bbpos==='above')return{v:'AMBER',f:0.6,t:'상단 과열 — 분할 익절 우선'};
+    if(s.bbpos==='upper')return{v:'GREEN',f:0.8,t:'중심~상단, 보유·소량'};
+    if(s.bbpos==='mid'||s.bbpos==='lower')return{v:'GREEN',f:1.0,t:'눌림목 — 분할 매수'};
+    return{v:'AMBER',f:0.5,t:'하단 이탈 — 반등 확인 후'};
+  };
+  let size=0,call,detail,tmTxt='',gTrend='—',gTiming='—',gTC='',gMC='';
+  if(reg.tier==='RED'){
+    call='리스크-오프 · 비중 축소 / 신규 금지';
+    detail='T0 차단: '+(reg.reasons.join(', ')||'거시 위험')+'. 하위 티어 미고려. 보유분 청산·헷지 점검.';
+    gTrend='보류';gTiming='보류';
+  }else if(!tr.pass){
+    if(tr.hardBear){size=Math.min(reg.ceil,8);call='롱 비허가 · 반등 단타만(소액)';
+      detail='장기·중기 하락. '+(tr.dmg.join(', ')||'')+' 저항/SAR 빠른 청산.';gTrend='롱 불가';gTC='RED';}
+    else{size=Math.min(reg.ceil,15);call='추세 훼손 · 관망 / 소액 단타';
+      detail='추세 건전성 미충족: '+(tr.dmg.join(', ')||'정렬 약함')+'. 신규 보유 보류.';gTrend='미충족';gTC='AMBER';}
+    gTiming='보류';
+  }else{
+    const tm=timing(); tmTxt=tm.t; gTrend='롱 허가';gTC='GREEN';gTiming=tm.v==='GREEN'?'진입':'조건부';gMC=tm.v;
+    size=Math.round(reg.ceil*tr.sf*tm.f);
+    if(ob&&s.bbpos==='above')size=Math.min(size,Math.round(reg.ceil*0.45));
+    const big=Math.round(reg.ceil*0.7);
+    if(size>=big){call='분할 진입(추세추종) · 비중 '+size+'%';detail='전 티어 통과. 그래도 분할로 평단 관리.';}
+    else if(size>=20){call='소액 분할 진입 · 비중 '+size+'%';detail='통과했으나 신호 강도 보통 — 보수적 비중.';}
+    else{call='관망 / 최소 비중 '+size+'%';detail='통과했으나 타이밍 약함.';}
+  }
+  const setV=(id,cls,t)=>{const e=document.getElementById(id);e.className='v '+(cls||'');e.textContent=t;};
+  setV('vRegime',reg.tier,reg.label);setV('vTrend',gTC,gTrend);setV('vTiming',gMC,gTiming);
   document.getElementById('finalCall').textContent=call;
-  document.getElementById('finalDetail').textContent=tmp+' · '+detail;
+  document.getElementById('finalDetail').textContent=(tmTxt?tmTxt+' · ':'')+detail;
   const f=document.getElementById('sizefill');f.style.width=size+'%';f.textContent=size+'%';
-  f.style.background=size>=70?C.up:size>=35?C.amber:C.down;
+  f.style.background=size>=Math.round(reg.ceil*0.7)?C.up:size>=20?C.amber:C.down;
   document.getElementById('ceiling').style.left=reg.ceil+'%';
-  const mood=(reg.tier==='RED'||tr.hardBear)?0.06:Math.max(0.06,size/100);
-  document.getElementById('faceBox').innerHTML=faceSVG(mood);
+  document.getElementById('faceBox').innerHTML=faceSVG(reg.tier==='RED'?0.05:Math.max(0.05,size/100));
+  // T0 리스크 = 붉은 호흡
+  const fc=document.querySelector('.card.final'), vr=document.getElementById('vRegime');
+  if(reg.risk){fc.classList.add('risk-on');vr.classList.add('risk-pulse');}
+  else{fc.classList.remove('risk-on');vr.classList.remove('risk-pulse');}
   let note;
-  if(tr.longOk&&reg.tier==='GREEN')note='<b>추세장:</b> BB 상단=밴드타기(매도신호 아님). 하단~중심 눌림이 매수 타이밍.';
-  else if(!tr.longOk)note='<b>약세장:</b> BB 하단 추격매수 금지. 반등은 단타로만, 20MA 회복 실패 시 청산.';
-  else note='<b>횡보:</b> 상단=분할익절, 하단=반등 기대. 스퀴즈면 돌파 확정까지 관망.';
+  if(reg.tier==='RED')note='<b>리스크-오프:</b> 매수 신호 무시. 보유분 축소·청산 우선.';
+  else if(!tr.pass)note='<b>추세 훼손:</b> 추격매수 금지. 단타만, 20MA 회복 실패 시 청산.';
+  else note='<b>추세 유효:</b> 상단=분할익절, 하단~중심 눌림=분할 매수. 과매수는 매도신호 아님(밴드타기).';
   document.getElementById('bbnote').innerHTML=note;
   const fl=[];
-  if(reg.tier==='RED'&&tr.v!=='RED')fl.push(['danger','거시 우선','VIX 스트레스가 추세를 이깁니다. <b>레버리지 비중 축소</b> 1순위.']);
-  if(tr.longOk&&ob)fl.push(['info','추세장 과매수','매도 신호 아님. 밴드타기 유지, 신규 풀매수만 자제.']);
-  if(tr.hardBear&&(s.rsi<=St.rsiOS||s.mfi<=St.mfiOS))fl.push(['warn','역추세 과매도','반등 단타만, 소액+빠른 청산.']);
-  if(s.macd==='golden'&&s.ma180==='below')fl.push(['warn','약한 골든','180선 아래=신뢰 낮음, 확인매수 소액.']);
-  if(s.diver==='bear'&&tr.longOk)fl.push(['warn','약세 다이버전스','추세 둔화. 신규 중단·분할익절(전량청산은 아님).']);
-  if(s.diver==='bull'&&tr.hardBear)fl.push(['info','강세 다이버전스','선행 반등 가능, 전환 확인 전 소액.']);
-  if(s.bbwidth==='squeeze')fl.push(['info','BB 스퀴즈','변동성 수축=큰 변동 임박. 돌파 방향 확인 후 진입.']);
-  if(state.macro.fng>=St.fngHot&&tr.longOk)fl.push(['warn','과열','극단적 탐욕. 비중 상한 낮춰 운용.']);
+  if(reg.tier==='RED')fl.push(['danger','T0 리스크',(reg.reasons.join(' · ')||'거시 위험')+' → <b>비중 축소 1순위</b>(상위 티어 우선).']);
+  if(s.dtop)fl.push(['danger','더블탑 의심','휴리스틱 감지 — 데드캣 가능성. 직접 확인 후 보수적 대응.']);
+  if((s.bigdown||0)>=1)fl.push(['warn','장대음봉',s.bigdown+'개 — 분배(매도압력). 익절·헷지 고려.']);
+  if(Math.abs(s.ext20||0)>=St.extMax)fl.push(['warn','이격 과열','20MA 이격 '+s.ext20+'% — 평균회귀 위험. 추격매수 금지.']);
+  if(s.diver==='bear'&&tr.longOk)fl.push(['warn','약세 다이버전스','추세 둔화 — 신규 중단·분할익절.']);
+  if(ob&&s.bbpos==='above')fl.push(['warn','상단 과매수','신규 풀매수 자제, 분할 익절.']);
+  if(s.bbwidth==='squeeze')fl.push(['info','BB 스퀴즈','변동성 수축 — 돌파 방향 확인 후 진입.']);
   const box=document.getElementById('flags');
-  box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 충돌 없음 — 신호 정렬 양호</div>';
+  box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 리스크 없음 — 신호 정렬 양호</div>';
 }
 document.querySelectorAll('#ticker button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#ticker button').forEach(x=>x.classList.remove('on'));
@@ -685,8 +724,20 @@ function renderOverlay(){
       if(x1==null||y1==null||x2==null||y2==null)return;
       seg(x1,y1,x2,y2,col,seld?2.4:1.8);
       if(seld){dot(x1,y1,col);dot(x2,y2,col);}
+    }else if(it.type==='channel'&&it.p1&&it.p2&&it.p3){
+      const x1=timeX(it.p1.time),y1=priceY(it.p1.price),x2=timeX(it.p2.time),y2=priceY(it.p2.price),
+            x3=timeX(it.p3.time),y3=priceY(it.p3.price);
+      if([x1,y1,x2,y2,x3,y3].some(v=>v==null))return;
+      const mm=(x2-x1)?(y2-y1)/(x2-x1):0, py1=y3+mm*(x1-x3), py2=y3+mm*(x2-x3);
+      octx.fillStyle=col;octx.globalAlpha=0.06;octx.beginPath();
+      octx.moveTo(x1,y1);octx.lineTo(x2,y2);octx.lineTo(x2,py2);octx.lineTo(x1,py1);octx.closePath();octx.fill();octx.globalAlpha=1;
+      seg(x1,y1,x2,y2,col,seld?2.2:1.6); seg(x1,py1,x2,py2,col,seld?2.2:1.6);
+      if(seld){dot(x1,y1,col);dot(x2,y2,col);dot(x3,y3,col);}
     }
   });
+  const pc=state.draw.pendingCh;
+  if(pc){const a=timeX(pc.p1.time),b=priceY(pc.p1.price),c2=timeX(pc.p2.time),d2=priceY(pc.p2.price);
+    if(a!=null&&c2!=null)seg(a,b,c2,d2,C.steel,1.6);}
   // 그리는 중 고무줄
   const d=state.draw.draft;
   if(d&&d.x2!=null){seg(d.x1,d.y1,d.x2,d.y2,C.steel,1.6);}
@@ -710,6 +761,16 @@ function hitTest(px,py){
       if(Math.hypot(px-x2,py-y2)<HANDLE)return{idx:i,part:'p2'};
       if(dist2seg(px,py,x1,y1,x2,y2)<HIT)return{idx:i,part:'whole'};
     }
+    else if(it.type==='channel'&&it.p1&&it.p2&&it.p3){
+      const x1=timeX(it.p1.time),y1=priceY(it.p1.price),x2=timeX(it.p2.time),y2=priceY(it.p2.price),
+            x3=timeX(it.p3.time),y3=priceY(it.p3.price);
+      if(x1==null||x2==null||x3==null)continue;
+      if(Math.hypot(px-x1,py-y1)<HANDLE)return{idx:i,part:'p1'};
+      if(Math.hypot(px-x2,py-y2)<HANDLE)return{idx:i,part:'p2'};
+      if(Math.hypot(px-x3,py-y3)<HANDLE)return{idx:i,part:'p3'};
+      const mm=(x2-x1)?(y2-y1)/(x2-x1):0, py1=y3+mm*(x1-x3), py2=y3+mm*(x2-x3);
+      if(dist2seg(px,py,x1,y1,x2,y2)<HIT||dist2seg(px,py,x1,py1,x2,py2)<HIT)return{idx:i,part:'whole'};
+    }
   }
   return null;
 }
@@ -724,6 +785,18 @@ function onDown(e){
   }else if(m==='trend'){
     const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
     state.draw.draft={t1:t,p1v:p,x1:px,y1:py,x2:px,y2:py}; drag={kind:'draft'};
+  }else if(m==='channel'){
+    if(state.draw.pendingCh){
+      const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
+      const pc=state.draw.pendingCh;
+      state.draw.items.push({id:Date.now()+'',type:'channel',color:C.purple,
+        p1:pc.p1,p2:pc.p2,p3:{time:t,price:Math.round(p*100)/100}});
+      state.draw.pendingCh=null; state.draw.sel=state.draw.items.length-1; selectTool('edit');
+      saveDrawings();renderOverlay();renderDrawList();
+    }else{
+      const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
+      state.draw.draft={t1:t,p1v:p,x1:px,y1:py,x2:px,y2:py}; drag={kind:'draft'};
+    }
   }else if(m==='edit'){
     const h=hitTest(px,py);
     if(h){state.draw.sel=h.idx; drag={kind:'move',idx:h.idx,part:h.part,lastX:px,lastY:py};}
@@ -750,6 +823,18 @@ function onMove(e){
         drag.lastX=px;drag.lastY=py;
       }
     }
+    else if(it.type==='channel'){
+      if(drag.part==='p1'||drag.part==='p2'||drag.part==='p3'){
+        const t=xToTime(px),p=yToPrice(py);
+        if(t!=null)it[drag.part].time=t; if(p!=null)it[drag.part].price=Math.round(p*100)/100;
+      }else{
+        const ddx=px-drag.lastX, ddy=py-drag.lastY;
+        ['p1','p2','p3'].forEach(k=>{const x=timeX(it[k].time),y=priceY(it[k].price);
+          const nt=xToTime(x+ddx),np=yToPrice(y+ddy);
+          if(nt!=null)it[k].time=nt; if(np!=null)it[k].price=Math.round(np*100)/100;});
+        drag.lastX=px;drag.lastY=py;
+      }
+    }
     renderOverlay();
   }
 }
@@ -759,9 +844,13 @@ function onUp(e){
     const d=state.draw.draft;
     const t2=xToTime(d.x2),p2=yToPrice(d.y2);
     if(t2!=null&&p2!=null&&(Math.abs(d.x2-d.x1)>3||Math.abs(d.y2-d.y1)>3)){
-      state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,
-        p1:{time:d.t1,price:Math.round(d.p1v*100)/100},p2:{time:t2,price:Math.round(p2*100)/100}});
-      state.draw.sel=state.draw.items.length-1; selectTool('edit');
+      const p1o={time:d.t1,price:Math.round(d.p1v*100)/100}, p2o={time:t2,price:Math.round(p2*100)/100};
+      if(state.drawMode==='channel'){
+        state.draw.pendingCh={p1:p1o,p2:p2o}; setDrawStatus('평행선 위치를 클릭하세요');
+      }else{
+        state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,p1:p1o,p2:p2o});
+        state.draw.sel=state.draw.items.length-1; selectTool('edit');
+      }
     }
     state.draw.draft=null; saveDrawings();renderOverlay();renderDrawList();
   }else if(drag.kind==='move'){ saveDrawings();renderDrawList(); }
@@ -773,7 +862,7 @@ function renderDrawList(){
   if(!state.draw.items.length){el.innerHTML='<div class="dempty">없음 — 도구를 골라 차트에 그리세요.</div>';return;}
   el.innerHTML=state.draw.items.map((it,i)=>{
     const c=it.color||(it.type==='hline'?C.amber:C.steel);
-    const lab=it.type==='hline'?('수평 $'+it.price):('추세 '+it.p1.price+'→'+it.p2.price);
+    const lab=it.type==='hline'?('수평 $'+it.price):it.type==='channel'?'채널':('추세 '+it.p1.price+'→'+it.p2.price);
     const sel=i===state.draw.sel?' style="background:rgba(106,169,255,.10);border-radius:6px"':'';
     return '<div class="di"'+sel+'><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-i="'+i+'">×</button></div>';
   }).join('');
@@ -792,13 +881,13 @@ async function loadDrawings(){
     if(r.configured){document.getElementById('drawSync').textContent='클라우드 저장(Supabase)';
       if(Array.isArray(r.drawings)&&r.drawings.length)items=r.drawings;}
   }catch(e){}
-  state.draw.items=items;state.draw.sel=null;state.draw.draft=null;renderOverlay();renderDrawList();
+  state.draw.items=items;state.draw.sel=null;state.draw.draft=null;state.draw.pendingCh=null;renderOverlay();renderDrawList();
 }
 function selectTool(m){
-  state.drawMode=m; state.draw.draft=null;
+  state.drawMode=m; state.draw.draft=null; state.draw.pendingCh=null;
   setOverlayInteractive(m!=='cursor');
-  setDrawStatus(m==='hline'?'클릭해서 수평선 추가':m==='trend'?'드래그해서 추세선 긋기':m==='edit'?'선 클릭=선택, 끝점/선 드래그=이동, Delete=삭제':'');
-  document.querySelectorAll('#drawbar button[data-m]').forEach(x=>{if(['cursor','edit','hline','trend'].includes(x.dataset.m))x.classList.toggle('on',x.dataset.m===m);});
+  setDrawStatus(m==='hline'?'클릭해서 수평선 추가':m==='trend'?'드래그해서 추세선 긋기':m==='channel'?'드래그로 기준선 → 클릭으로 평행선':m==='edit'?'선 클릭=선택, 끝점/선 드래그=이동, Delete=삭제':'');
+  document.querySelectorAll('#drawbar button[data-m]').forEach(x=>{if(['cursor','edit','hline','trend','channel'].includes(x.dataset.m))x.classList.toggle('on',x.dataset.m===m);});
 }
 document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
   const m=b.dataset.m;
