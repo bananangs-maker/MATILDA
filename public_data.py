@@ -11,6 +11,7 @@ Twelve Data 무료 키: https://twelvedata.com 가입 후 발급 (800회/일).
 import os
 import io
 import re
+import time
 import requests
 import pandas as pd
 
@@ -44,12 +45,30 @@ def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day")
     key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
     if not key:
         raise RuntimeError("TWELVEDATA_API_KEY 미설정 (Render 환경변수에 추가하세요)")
-    r = requests.get("https://api.twelvedata.com/time_series",
-                     params={"symbol": ticker, "interval": interval,
-                             "outputsize": outputsize, "apikey": key},
-                     headers=UA, timeout=12)
-    r.raise_for_status()
-    return _parse_twelvedata(r.json())
+    params = {"symbol": ticker, "interval": interval, "outputsize": outputsize, "apikey": key}
+    delays = [0, 7, 14]   # 429(분당 한도) 시 점증 백오프 재시도
+    last = None
+    for i, d in enumerate(delays):
+        if d:
+            time.sleep(d)
+        r = requests.get("https://api.twelvedata.com/time_series",
+                         params=params, headers=UA, timeout=12)
+        # Twelve Data는 본문 JSON code=429 로도 한도를 알림
+        body_429 = False
+        if r.status_code == 200:
+            try:
+                jj = r.json()
+                body_429 = isinstance(jj, dict) and jj.get("code") == 429
+            except Exception:
+                jj = None
+            if not body_429:
+                return _parse_twelvedata(jj if jj is not None else r.json())
+        if r.status_code == 429 or body_429:
+            last = "429 한도 초과 (재시도)"
+            continue
+        r.raise_for_status()
+        return _parse_twelvedata(r.json())
+    raise RuntimeError(f"Twelve Data {last or '요청 실패'} — 잠시 후 자동 재시도되며, 일봉은 Stooq로 폴백됩니다")
 
 
 def _from_stooq(ticker: str) -> pd.DataFrame:

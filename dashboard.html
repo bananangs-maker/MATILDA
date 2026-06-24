@@ -966,7 +966,7 @@ function renderTickers(){
     setTicker(b.dataset.t);
   });
 }
-function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); loadMtf(); }
+function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); setTimeout(loadMtf,4500); }
 function addTicker(t){ t=t.toUpperCase(); if(!state.watchlist.includes(t)){state.watchlist.push(t);saveWatchlist();} renderTickers(); }
 function removeTicker(t){
   if(PINNED.includes(t))return;
@@ -2016,7 +2016,7 @@ function initAlerts(){
   startAlerts();
 }
 buildMarketEvents();
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();loadMtf();scheduleMason();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();setTimeout(loadMtf,4500);scheduleMason();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
