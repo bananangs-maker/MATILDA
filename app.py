@@ -29,9 +29,12 @@ app = Flask(__name__, static_folder=None)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def mock_ohlcv(ticker: str, n: int = 500) -> pd.DataFrame:
+def mock_ohlcv(ticker: str, n: int = 500, interval: str = "1day") -> pd.DataFrame:
     seed = sum(ord(c) for c in ticker)
     rng = np.random.default_rng(seed)
+    freq = {"1day": "B", "1week": "W-FRI", "1month": "ME"}.get(interval, "B")
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=n, freq=freq).strftime("%Y-%m-%d")
+    n = len(dates)   # date_range 가 freq 앵커로 ±1 될 수 있어 실제 길이에 맞춤
     drift = np.linspace(0, 0.9 if ticker == "TQQQ" else 0.6, n)
     noise = np.cumsum(rng.normal(0, 0.022, n))
     close = pd.Series(30 * np.exp(drift * 0.4 + noise))
@@ -39,7 +42,6 @@ def mock_ohlcv(ticker: str, n: int = 500) -> pd.DataFrame:
     low = close * (1 - np.abs(rng.normal(0, 0.012, n)))
     op = close.shift(1).fillna(close.iloc[0])
     vol = rng.integers(1_000_000, 8_000_000, n).astype(float)
-    dates = pd.bdate_range(end=pd.Timestamp.today(), periods=n).strftime("%Y-%m-%d")
     return pd.DataFrame({"date": dates, "open": op, "high": high,
                          "low": low, "close": close, "volume": vol})
 
@@ -68,15 +70,17 @@ def _sentiment_cached():
         return _SENT["data"]   # 직전 캐시라도 있으면 사용, 없으면 None
 
 
-def _load(ticker):
+def _load(ticker, interval="1day"):
     if USE_MOCK:
-        return mock_ohlcv(ticker), "MOCK (합성 데이터)"
-    hit = _CACHE.get(ticker)
+        n = {"1day": 500, "1week": 400, "1month": 300}.get(interval, 500)
+        return mock_ohlcv(ticker, n, interval), "MOCK (합성 데이터)"
+    ckey = (ticker, interval)
+    hit = _CACHE.get(ckey)
     if hit and time.time() - hit[2] < _TTL:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    df, source = daily_ohlcv(ticker, yrange="2y")
-    _CACHE[ticker] = (df, source, time.time())
+    df, source = daily_ohlcv(ticker, yrange="2y", interval=interval)
+    _CACHE[ckey] = (df, source, time.time())
     return df, source
 
 
@@ -92,7 +96,10 @@ def chart(ticker):
     if not valid_ticker(ticker):
         return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
     try:
-        df, source = _load(ticker)
+        interval = request.args.get("interval", "1day")
+        if interval not in ("1day", "1week", "1month"):
+            interval = "1day"
+        df, source = _load(ticker, interval)
         payload = compute_series(df)
         payload["signals"] = compute_signals(df)
         import backtest as bt
@@ -136,6 +143,8 @@ def chart(ticker):
             "asof": str(df["date"].iloc[-1]),
             "last": round(float(df["close"].iloc[-1]), 2),
             "bars": int(len(df)),
+            "interval": interval,
+            "engine_daily_only": interval != "1day",
         }
         return jsonify(payload)
     except Exception as e:

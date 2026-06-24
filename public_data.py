@@ -40,12 +40,12 @@ def _parse_twelvedata(j: dict) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)  # 오래된 -> 최신
 
 
-def _from_twelvedata(ticker: str, outputsize: int = 500) -> pd.DataFrame:
+def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day") -> pd.DataFrame:
     key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
     if not key:
         raise RuntimeError("TWELVEDATA_API_KEY 미설정 (Render 환경변수에 추가하세요)")
     r = requests.get("https://api.twelvedata.com/time_series",
-                     params={"symbol": ticker, "interval": "1day",
+                     params={"symbol": ticker, "interval": interval,
                              "outputsize": outputsize, "apikey": key},
                      headers=UA, timeout=12)
     r.raise_for_status()
@@ -98,13 +98,17 @@ def market_quotes() -> list:
     return out
 
 
-def daily_ohlcv(ticker: str, yrange: str = "2y") -> tuple[pd.DataFrame, str]:
+def daily_ohlcv(ticker: str, yrange: str = "2y", interval: str = "1day") -> tuple[pd.DataFrame, str]:
     ticker = ticker.upper()
     if not valid_ticker(ticker):
         raise ValueError(f"잘못된 티커 형식: {ticker}")
     errors = []
-    for name, fn in (("Twelve Data", lambda: _from_twelvedata(ticker, 500)),
-                     ("Stooq", lambda: _from_stooq(ticker))):
+    # 주봉/월봉은 outputsize를 키워 충분한 히스토리 확보 (200기간 MA 등)
+    osize = 500 if interval == "1day" else (600 if interval == "1week" else 360)
+    sources = [("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
+    if interval == "1day":
+        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 폴백은 일봉만
+    for name, fn in sources:
         try:
             df = fn()
             if len(df) > 60:
