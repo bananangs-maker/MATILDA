@@ -178,6 +178,31 @@ def quant_route(ticker):
         return jsonify({"error": str(e), "ticker": ticker}), 500
 
 
+@app.route("/mtf/<ticker>")
+def mtf_route(ticker):
+    ticker = ticker.upper()
+    from public_data import valid_ticker
+    if not valid_ticker(ticker):
+        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
+    try:
+        import engine as eng
+        out = []
+        for iv, lab in (("1day", "일봉"), ("1week", "주봉"), ("1month", "월봉")):
+            try:
+                df, _ = _load(ticker, iv)
+                e = eng.compute_engine(df)   # 매크로 없이 가격 기준
+                m = e.get("metrics", {})
+                out.append({"tf": lab, "interval": iv, "regime": e["regime"],
+                            "size": e["size"], "risk": e["risk"], "risk_label": e["risk_label"],
+                            "above200": m.get("above200"), "rvol": m.get("rvol"), "adx": m.get("adx"),
+                            "ret1": m.get("ret1")})
+            except Exception as ie:
+                out.append({"tf": lab, "interval": iv, "error": str(ie)})
+        return jsonify({"ticker": ticker, "tfs": out})
+    except Exception as e:
+        return jsonify({"error": str(e), "ticker": ticker}), 500
+
+
 @app.route("/search")
 def search_route():
     q = (request.args.get("q") or "").strip()

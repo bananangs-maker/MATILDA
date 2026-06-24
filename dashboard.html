@@ -60,6 +60,18 @@
   #osc{height:170px}
   #deckmason{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
   .dm-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .psrow,.kl-inrow{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .psrow label,.kl-inrow label{font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap}
+  .psrow input,.kl-inrow input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--border);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px 8px}
+  .psrow input:focus,.kl-inrow input:focus{outline:none;border-color:var(--accent)}
+  .psout .por,.kl-stop .por,#klOut .por{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;padding:5px 0;border-top:1px solid var(--border);color:var(--muted)}
+  .psout .por:first-child,.kl-stop .por:first-child{border-top:none}
+  .psout .pv,#klOut .pv,.kl-stop .pv{font-weight:600;color:var(--ink)}
+  .mtfrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--border);font-size:11.5px}
+  .mtfrow:first-child{border-top:none}
+  .mtfrow .mtf-tf{font-family:var(--mono);color:var(--muted);width:32px;flex:none}
+  .mtfrow .mtf-rg{font-weight:600;flex:none}
+  .mtfrow .mtf-sz{font-family:var(--mono);color:var(--faint);font-size:10px;margin-left:auto}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:13px 14px;transition:border-color .15s}
   .card:hover{border-color:var(--border2)}
   .card.final{background:var(--panel);border-color:var(--accent)}
@@ -544,6 +556,22 @@
         </div>
         <div class="allog" id="alLog"></div>
       </div>
+      <div class="card" id="posSizeCard">
+        <div class="lab">포지션 사이징 <span class="hint">권장 비중 기반 실투입</span></div>
+        <div class="psrow"><label>계좌 금액 ($)</label><input type="number" id="psAcct" placeholder="예: 10000"></div>
+        <div class="psout" id="psOut"><div class="none">계좌 금액을 입력하세요</div></div>
+      </div>
+      <div class="card" id="mtfCard">
+        <div class="lab">다중 타임프레임 <span class="hint">일·주·월 추세</span></div>
+        <div id="mtfBox"><div class="none">불러오는 중…</div></div>
+      </div>
+      <div class="card" id="riskToolCard">
+        <div class="lab">켈리 · 손절 제안 <span class="hint">변동성 기반 · 가정 입력</span></div>
+        <div class="kl-stop" id="klStop"></div>
+        <div class="kl-inrow"><label>승률%</label><input id="klWin" type="number" value="55" step="1">
+          <label>손익비</label><input id="klRR" type="number" value="1.5" step="0.1"></div>
+        <div id="klOut"></div>
+      </div>
   </div>
   <div class="summary">
     <h3>역사적 계절성 <span class="ssub">연도별 연초 대비 누적수익률 — 과거 데이터, 예측 아님</span>
@@ -832,6 +860,7 @@ async function load(){
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
     st.textContent=d.meta.source+' · '+d.meta.asof+' · '+d.meta.bars+'봉';
+    renderPosSize(); renderRiskTools();
     scheduleMason();
   }catch(e){
     st.className='status err';
@@ -931,7 +960,7 @@ function renderTickers(){
     setTicker(b.dataset.t);
   });
 }
-function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); }
+function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); loadMtf(); }
 function addTicker(t){ t=t.toUpperCase(); if(!state.watchlist.includes(t)){state.watchlist.push(t);saveWatchlist();} renderTickers(); }
 function removeTicker(t){
   if(PINNED.includes(t))return;
@@ -1651,10 +1680,19 @@ function renderFlagTicker(){
   const flags=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
     :(soon.length?[]:["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"]);
   const items=soon.concat(flags);
-  // 콘텐츠 1벌을 블록으로 감싸 2개 배치 → -50% 이동 시 픽셀단위로 완벽히 이어짐(gap 불일치 없음)
-  const seq=items.join('');
-  if(inner.dataset.seq===seq)return;
-  inner.dataset.seq=seq;
+  const base=items.join('');
+  if(inner.dataset.base===base)return;
+  inner.dataset.base=base;
+  buildTape(inner,items);
+}
+function buildTape(inner,items){
+  inner._items=items;
+  if(!items||!items.length){inner.innerHTML='';return;}
+  const host=inner.parentElement, need=(host&&host.clientWidth)||1000;
+  inner.innerHTML="<div class='tapeseq'>"+items.join('')+"</div>";
+  const w=(inner.firstChild&&inner.firstChild.scrollWidth)||1;
+  const mult=Math.max(1,Math.ceil((need+60)/w));   // 화면 폭 채울 만큼 반복(빈 공간 방지)
+  let seq=''; for(let i=0;i<mult;i++)seq+=items.join('');
   inner.innerHTML="<div class='tapeseq'>"+seq+"</div><div class='tapeseq'>"+seq+"</div>";
 }
 async function loadMktTape(){
@@ -1670,9 +1708,8 @@ async function loadMktTape(){
       return "<span class='mkti'><span class='mlab'>"+t.label+"</span> "+(t.unit||'')+fmt(t.price)
         +" <span class='mpct "+cls+"'>"+arr+Math.abs(t.pct).toFixed(2)+"%</span></span>";
     });
-    const seq=items.join('');
-    if(inner.dataset.seq!==seq){inner.dataset.seq=seq;
-      inner.innerHTML="<div class='tapeseq'>"+seq+"</div><div class='tapeseq'>"+seq+"</div>";}
+    const base=items.join('');
+    if(inner.dataset.base!==base){inner.dataset.base=base; buildTape(inner,items);}
   }catch(e){document.getElementById('mktTape').style.display='none';}
 }
 function renderCrosses(list){
@@ -1789,6 +1826,56 @@ function setFavicon(){
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 setFavicon();
 document.getElementById('brandLogo').innerHTML=faceSVG(1);
+/* ---------- 신규 유틸 패널: 포지션 사이징 / 켈리·손절 / 다중 타임프레임 ---------- */
+function curEngine(){return (state.data&&state.data.engine)||null;}
+function curPrice(){return (state.data&&state.data.meta&&state.data.meta.last)||null;}
+function renderPosSize(){
+  const out=document.getElementById('psOut'); if(!out)return;
+  const e=curEngine(), px=curPrice(); const acct=parseFloat(document.getElementById('psAcct').value);
+  if(!e||!px){out.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";return;}
+  if(!acct||acct<=0){out.innerHTML="<div class='none'>계좌 금액을 입력하세요</div>";return;}
+  const sz=e.size||0, alloc=acct*sz/100, shares=Math.floor(alloc/px), real=shares*px;
+  const por=(k,v)=>"<div class='por'><span>"+k+"</span><span class='pv'>"+v+"</span></div>";
+  out.innerHTML=por('권장 비중',sz+'%')+por('목표 투입금',('$'+Math.round(alloc).toLocaleString()))
+    +por('현재가',('$'+px))+por('매수 주수',shares+'주')+por('실제 투입',('$'+Math.round(real).toLocaleString()))
+    +por('현금 보유',('$'+Math.round(acct-real).toLocaleString()));
+}
+function renderRiskTools(){
+  const e=curEngine(); const stop=document.getElementById('klStop'), out=document.getElementById('klOut'); if(!stop||!out)return;
+  if(e&&e.metrics&&e.metrics.rvol!=null){
+    const rv=e.metrics.rvol, dv=rv/Math.sqrt(252); // 일변동성(%)
+    const s2=(2*dv).toFixed(1), s3=(3*dv).toFixed(1);
+    stop.innerHTML="<div class='por'><span>실현변동성(연)</span><span class='pv'>"+rv+"%</span></div>"
+      +"<div class='por'><span>일 변동성</span><span class='pv'>"+dv.toFixed(2)+"%</span></div>"
+      +"<div class='por'><span>제안 손절폭(2σ·3σ)</span><span class='pv' style='color:var(--stop)'>−"+s2+"% / −"+s3+"%</span></div>";
+  }else stop.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";
+  const p=Math.max(0,Math.min(100,parseFloat(document.getElementById('klWin').value)))/100;
+  const b=Math.max(0.1,parseFloat(document.getElementById('klRR').value)||1.5);
+  const f=Math.max(0,p-(1-p)/b); // 풀 켈리(분수)
+  const fp=(f*100).toFixed(1), half=(f*50).toFixed(1), quart=(f*25).toFixed(1);
+  out.innerHTML="<div class='por'><span>풀 켈리</span><span class='pv'>"+fp+"%</span></div>"
+    +"<div class='por'><span>½ 켈리(권장)</span><span class='pv' style='color:var(--accent)'>"+half+"%</span></div>"
+    +"<div class='por'><span>¼ 켈리(보수)</span><span class='pv'>"+quart+"%</span></div>"
+    +"<div class='btnote' style='margin-top:6px'>켈리는 승률·손익비 '가정'에 따른 참고치입니다. 과대평가 위험이 커 통상 ½~¼만 사용합니다.</div>";
+}
+async function loadMtf(){
+  const box=document.getElementById('mtfBox'); if(!box)return;
+  try{
+    const d=await (await fetch('/mtf/'+state.ticker)).json();
+    if(d.error)throw new Error(d.error);
+    const rgCol=r=>r==='상승추세'?'var(--go)':r==='하락추세'?'var(--stop)':r==='추세약화'?'var(--caution)':'var(--muted)';
+    box.innerHTML=(d.tfs||[]).map(t=>{
+      if(t.error)return "<div class='mtfrow'><span class='mtf-tf'>"+t.tf+"</span><span class='none'>데이터 부족</span></div>";
+      return "<div class='mtfrow'><span class='mtf-tf'>"+t.tf+"</span>"
+        +"<span class='mtf-rg' style='color:"+rgCol(t.regime)+"'>"+t.regime+"</span>"
+        +"<span class='mtf-sz'>비중 "+t.size+"% · "+(t.above200?'200MA↑':'200MA↓')+"</span></div>";
+    }).join('');
+    scheduleMason();
+  }catch(e){box.innerHTML="<div class='none'>다중 TF 로딩 실패</div>";}
+}
+(function(){const a=document.getElementById('psAcct'); if(a)a.oninput=()=>{renderPosSize();scheduleMason();};
+  ['klWin','klRR'].forEach(id=>{const el=document.getElementById(id); if(el)el.oninput=()=>{renderRiskTools();scheduleMason();};});})();
+
 /* ---------- 데크 메이슨리: 카드를 가장 짧은 컬럼에 채워 공백 최소화 ---------- */
 let _masonRO=null;
 function layoutMason(){
@@ -1813,6 +1900,8 @@ function layoutMason(){
 }
 function scheduleMason(){clearTimeout(window._mt);window._mt=setTimeout(layoutMason,60);}
 window.addEventListener('resize',scheduleMason);
+window.addEventListener('resize',function(){clearTimeout(window._tt);window._tt=setTimeout(function(){
+  ['flagTapeInner','mktTapeInner'].forEach(function(id){var el=document.getElementById(id); if(el&&el._items&&el._items.length)buildTape(el,el._items);});},120);});
 (function(){var sm=document.getElementById('spMark'); if(sm)sm.innerHTML=faceSVG(1);
   var sp=document.getElementById('splash'); if(sp){setTimeout(function(){sp.classList.add('hide');
     setTimeout(function(){sp.style.display='none';},650);},1500);}})();
@@ -1925,7 +2014,7 @@ function initAlerts(){
   startAlerts();
 }
 buildMarketEvents();
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();scheduleMason();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();loadMtf();scheduleMason();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
