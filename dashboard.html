@@ -303,9 +303,6 @@
   .fng-ov{margin-bottom:12px}
   .fng-ov #fngGaugeBox{max-width:200px;margin:0 auto}
   .fng-score{text-align:center;font-family:var(--disp);font-weight:700;font-size:19px;line-height:1;margin-top:2px}
-  .fng-press{text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px}
-  .fng-press b{font-weight:700;font-size:12px}
-  .fng-press span{color:var(--faint);font-size:9.5px}
   .fng-ov .fcmps{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-top:14px}
   .fcmp{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .fcmp-txt{display:flex;flex-direction:column;line-height:1.25}
@@ -1116,7 +1113,6 @@ function renderFngBlock(d){
   document.getElementById('fngOverview').innerHTML=
     "<div class='gbox' id='fngGaugeBox'></div>"
     +"<div class='fng-score' style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"</div>"
-    +"<div class='fng-press'>매수압력 <b style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"</b> <span>· 7개 지표 종합(공포탐욕 지수)</span></div>"
     +"<div class='fcmps'>"+badge('전일',ov.prev_close)+badge('1주 전',ov.prev_week)+badge('1달 전',ov.prev_month)+badge('1년 전',ov.prev_year)+"</div>";
   renderFngGauge(sc);
   // TIMELINE: 다른 차트와 동일한 lightweight-charts (폰트·선 고정 크기)
