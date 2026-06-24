@@ -43,6 +43,80 @@ def cci(df: pd.DataFrame, period: int = 20) -> pd.Series:
     return (tp - sma) / (0.015 * mad)
 
 
+# ---------- 추가 지표 (Phase 2) ----------
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    h, l, c = df["high"], df["low"], df["close"]
+    tr = pd.concat([(h - l), (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def adx(df: pd.DataFrame, period: int = 14):
+    """추세 강도(ADX) + 방향(+DI/-DI). ADX>25=추세, <20=횡보."""
+    h, l, c = df["high"], df["low"], df["close"]
+    up, dn = h.diff(), -l.diff()
+    plus_dm = ((up > dn) & (up > 0)) * up
+    minus_dm = ((dn > up) & (dn > 0)) * dn
+    tr = pd.concat([(h - l), (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    atr_ = tr.ewm(alpha=1 / period, adjust=False).mean().replace(0, np.nan)
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1 / period, adjust=False).mean(), plus_di, minus_di
+
+
+def realized_vol(close: pd.Series, period: int = 20) -> pd.Series:
+    """연율화 실현변동성(%) — 변동성 타겟팅의 핵심 입력."""
+    r = np.log(close / close.shift(1))
+    return r.rolling(period).std(ddof=0) * np.sqrt(252) * 100
+
+
+def vwap_anchored(df: pd.DataFrame) -> pd.Series:
+    """데이터 시작점 기준 앵커드 VWAP."""
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    return (tp * df["volume"]).cumsum() / df["volume"].cumsum().replace(0, np.nan)
+
+
+def keltner(df: pd.DataFrame, period: int = 20, mult: float = 2.0):
+    mid = df["close"].ewm(span=period, adjust=False).mean()
+    a = atr(df, period)
+    return mid + mult * a, mid, mid - mult * a
+
+
+def donchian(df: pd.DataFrame, period: int = 20):
+    up = df["high"].rolling(period).max()
+    lo = df["low"].rolling(period).min()
+    return up, (up + lo) / 2, lo
+
+
+def ichimoku(df: pd.DataFrame):
+    """전환선(9)/기준선(26)/선행스팬A·B(52). 구름(span)은 표시 시 +26 시프트."""
+    h, l = df["high"], df["low"]
+    conv = (h.rolling(9).max() + l.rolling(9).min()) / 2
+    base = (h.rolling(26).max() + l.rolling(26).min()) / 2
+    span_a = (conv + base) / 2
+    span_b = (h.rolling(52).max() + l.rolling(52).min()) / 2
+    return conv, base, span_a, span_b
+
+
+def cmf(df: pd.DataFrame, period: int = 20) -> pd.Series:
+    """Chaikin Money Flow — OBV보다 정교한 자금흐름(-1~+1)."""
+    rng = (df["high"] - df["low"]).replace(0, np.nan)
+    mfm = ((df["close"] - df["low"]) - (df["high"] - df["close"])) / rng
+    mfv = mfm * df["volume"]
+    return mfv.rolling(period).sum() / df["volume"].rolling(period).sum().replace(0, np.nan)
+
+
+def stoch(df: pd.DataFrame, k: int = 14, d: int = 3):
+    ll, hh = df["low"].rolling(k).min(), df["high"].rolling(k).max()
+    kf = 100 * (df["close"] - ll) / (hh - ll).replace(0, np.nan)
+    return kf, kf.rolling(d).mean()
+
+
+def williams_r(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    hh, ll = df["high"].rolling(period).max(), df["low"].rolling(period).min()
+    return -100 * (hh - df["close"]) / (hh - ll).replace(0, np.nan)
+
+
 def macd(close: pd.Series, fast=12, slow=26, sig=9):
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
@@ -353,6 +427,11 @@ def compute_series(df: pd.DataFrame) -> dict:
                     "color": "rgba(61,214,140,.45)" if c_up else "rgba(255,90,77,.45)"})
 
     hist_color = lambda v: ("#3DD68C" if v >= 0 else "#FF5A4D")
+    ku, km, kl = keltner(df)
+    du, dm, dl = donchian(df)
+    conv, base, spanA, spanB = ichimoku(df)
+    adx_, pdi, mdi = adx(df)
+    sk, sd = stoch(df)
     return {
         "candles": candles,
         "volume": vol,
@@ -364,9 +443,18 @@ def compute_series(df: pd.DataFrame) -> dict:
         "sma60": _series(dates, close.rolling(60).mean()),
         "sma180": _series(dates, close.rolling(180).mean()),
         "sar": _series(dates, sar),
+        "vwap": _series(dates, vwap_anchored(df)),
+        "kelt_up": _series(dates, ku), "kelt_low": _series(dates, kl),
+        "donch_up": _series(dates, du), "donch_low": _series(dates, dl),
+        "ichi_conv": _series(dates, conv), "ichi_base": _series(dates, base),
+        "ichi_spanA": _series(dates, spanA), "ichi_spanB": _series(dates, spanB),
         "rsi": _series(dates, rsi14),
         "mfi": _series(dates, mfi(df, 14)),
         "cci": _series(dates, cci(df, 20)),
+        "adx": _series(dates, adx_), "pdi": _series(dates, pdi), "mdi": _series(dates, mdi),
+        "stoch_k": _series(dates, sk), "stoch_d": _series(dates, sd),
+        "cmf": _series(dates, cmf(df, 20)),
+        "willr": _series(dates, williams_r(df, 14)),
         "macd_line": _series(dates, mline),
         "macd_signal": _series(dates, msig),
         "macd_hist": _series(dates, mhist, hist_color),

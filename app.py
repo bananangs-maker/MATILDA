@@ -77,6 +77,17 @@ def chart(ticker):
         payload["signals"] = compute_signals(df)
         import backtest as bt
         payload["markers"] = bt.markers_from_signals(df, bt.generate_signals(df))
+        try:
+            vix = float(request.args.get("vix")) if request.args.get("vix") else None
+        except ValueError:
+            vix = None
+        import engine as eng, patterns as pat, summary as summ
+        payload["engine"] = eng.compute_engine(df, vix=vix)
+        payload["summary"] = summ.compute_summary(df)
+        cross_sigs, cross_marks = pat.detect_ma_cross(df)
+        payload["ma_cross"] = cross_sigs
+        payload["cross_markers"] = cross_marks
+        payload["candles_patterns"] = pat.detect_candles(df)
         payload["meta"] = {
             "ticker": ticker, "source": source,
             "asof": str(df["date"].iloc[-1]),
@@ -85,6 +96,7 @@ def chart(ticker):
         }
         return jsonify(payload)
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e), "ticker": ticker}), 500
 
 
