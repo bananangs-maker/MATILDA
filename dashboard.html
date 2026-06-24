@@ -243,6 +243,17 @@
   @keyframes toastout{to{transform:translateX(40px);opacity:0}}
   .mtag{font-size:9.5px;font-family:var(--mono);color:var(--caution);margin-left:6px}
   .mtag .rev{color:var(--steel);cursor:pointer;text-decoration:underline}
+  .pat{padding:8px 9px;border-radius:8px;background:var(--panel2);margin-bottom:6px;cursor:pointer;transition:.12s;border:1px solid transparent}
+  .pat:hover{border-color:var(--steel);transform:translateX(2px)}
+  .pat .prow{display:flex;align-items:center;gap:7px}
+  .pat .snm{flex:1;font-size:12px;color:var(--ink);font-weight:600}
+  .pat .pago{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
+  .pat .pdesc{font-size:10.5px;color:var(--muted);line-height:1.5;margin:5px 0 6px}
+  .pat .pstr{display:flex;align-items:center;gap:7px}
+  .pat .pbar{flex:1;height:4px;background:var(--border);border-radius:3px;overflow:hidden}
+  .pat .pbar i{display:block;height:100%;border-radius:3px;transition:width .6s ease}
+  .pat .pstr span{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
+  .tier.bull{background:rgba(38,194,129,.16);color:var(--go)} .tier.bear{background:rgba(242,54,69,.16);color:var(--stop)}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -275,6 +286,7 @@
     <button data-s="ichi"><span class="sw" style="background:#26C6DA"></span>일목구름</button>
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
+    <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
   </div>
   <div class="main">
     <div class="charts">
@@ -496,7 +508,8 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false},
+           vwap:false,ichi:false,kelt:false,donch:false,pat:false},
+  patternMarkers:[],
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
@@ -549,7 +562,23 @@ function applyToggles(){
   [S.donch_up,S.donch_low].forEach(s=>s.applyOptions({visible:state.toggles.donch}));
   [S.ichi_conv,S.ichi_base,S.ichi_spanA,S.ichi_spanB].forEach(s=>s.applyOptions({visible:state.toggles.ichi}));
   vol.applyOptions({visible:state.toggles.vol});
-  if(candle)candle.setMarkers(state.toggles.sig?state.markers:[]);
+  updateMarkers();
+}
+function updateMarkers(){
+  if(!candle)return;
+  let m=[];
+  if(state.toggles.sig&&state.markers)m=m.concat(state.markers);
+  if(state.toggles.pat&&state.patternMarkers)m=m.concat(state.patternMarkers);
+  m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
+  candle.setMarkers(m);
+}
+function locateBar(date){
+  const d=state.data; if(!d||!d.candles||!priceChart)return;
+  const idx=d.candles.findIndex(c=>c.time===date); if(idx<0)return;
+  const half=22, n=d.candles.length;
+  const from=d.candles[Math.max(0,idx-half)].time, to=d.candles[Math.min(n-1,idx+half)].time;
+  priceChart.timeScale().setVisibleRange({from,to});
+  document.getElementById('price').scrollIntoView({behavior:'smooth',block:'center'});
 }
 function renderPrice(d){
   candle.setData(d.candles); vol.setData(d.volume);
@@ -1305,9 +1334,17 @@ function gaugeStatic(){
 }
 function renderGauge(boxId,score){
   const box=document.getElementById(boxId); if(!box)return;
-  if(!box.querySelector('svg'))box.innerHTML=gaugeStatic();
+  const fresh=!box.querySelector('svg');
+  if(fresh)box.innerHTML=gaugeStatic();
   const ang=Math.max(-90,Math.min(90,(score||0)*90));
-  const n=box.querySelector('.needle'); if(n)n.style.transform='rotate('+ang+'deg)';
+  const n=box.querySelector('.needle'); if(!n)return;
+  const sweep=()=>{ n.style.transition='none'; n.style.transform='rotate(-90deg)';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      n.style.transition='transform 1.1s cubic-bezier(.2,.85,.25,1)';
+      n.style.transform='rotate('+ang+'deg)'; })); };
+  if(fresh){ box.style.cursor='pointer'; box.onmouseenter=sweep; }
+  box.dataset.ang=ang;
+  sweep();   // 로드/갱신 때마다 속도계처럼 0점에서 스윕
 }
 function ratingColor(r){return r&&r.indexOf('바이')>=0?C.up:r&&r.indexOf('셀')>=0?C.down:C.muted||'#868B98';}
 function renderSummary(s){
@@ -1335,13 +1372,43 @@ function renderCrosses(list){
     +"<span class='snm'>"+(s.kind==='golden'?'골든':'데드')+"크로스 "+s.pair+" · "+s.bars_ago+"봉 전"+(s.aligned?'':' · 추세역행')+"</span>"
     +"<span class='cf'>"+s.confidence+"%</span></div>").join('');
 }
+const PATTERN_DESC={
+  '도지':'시가≈종가. 매수·매도 힘이 팽팽 — 추세 전환 가능성(방향성은 약함).',
+  '망치':'하락 끝에 아래꼬리 긴 양봉. 저가 매수세 유입 — 매수 반전 신호.',
+  '교수형':'상승 끝에 아래꼬리 긴 캔들. 고점 경계 — 매도 반전 경고.',
+  '유성':'상승 끝에 위꼬리 긴 캔들. 매도 압력 — 하락 반전 신호.',
+  '역망치':'하락 끝에 위꼬리 긴 캔들. 반등 시도 — 매수 반전 신호.',
+  '장대양봉':'몸통이 큰 양봉. 강한 매수세 유입.',
+  '장대음봉':'몸통이 큰 음봉. 강한 매도세 유입.',
+  '상승장악':'전일 음봉을 완전히 감싸는 큰 양봉. 강한 매수 반전.',
+  '하락장악':'전일 양봉을 완전히 감싸는 큰 음봉. 강한 매도 반전.',
+  '관통형':'전일 음봉의 절반 이상을 회복한 양봉. 매수 반전.',
+  '흑운형':'전일 양봉의 절반 이상을 잠식한 음봉. 매도 반전.',
+  '상승잉태':'큰 음봉 안에 작은 양봉. 하락세 둔화 — 반전 조짐.',
+  '하락잉태':'큰 양봉 안에 작은 음봉. 상승세 둔화 — 반전 조짐.',
+  '샛별':'바닥에서 3봉 반전(음봉→소형봉→양봉). 강한 매수 반전.',
+  '석별':'천장에서 3봉 반전(양봉→소형봉→음봉). 강한 매도 반전.',
+  '적삼병':'연속 3개 양봉. 강한 상승 지속 신호.',
+  '흑삼병':'연속 3개 음봉. 강한 하락 지속 신호.'
+};
 function renderCandles(list){
   const el=document.getElementById('candleList');
-  if(!list||!list.length){el.innerHTML="<div class='none'>최근 캔들 패턴 없음</div>";return;}
+  state.patternMarkers=(list||[]).map(p=>({time:p.date,
+    position:p.kind==='bear'?'aboveBar':'belowBar',
+    color:p.kind==='bull'?C.up:p.kind==='bear'?C.down:C.muted,
+    shape:p.kind==='bull'?'arrowUp':p.kind==='bear'?'arrowDown':'circle',
+    text:p.name}));
+  if(!list||!list.length){el.innerHTML="<div class='none'>최근 캔들 패턴 없음</div>";updateMarkers();return;}
+  const sCol=k=>k==='bull'?C.up:k==='bear'?C.down:C.muted;
   el.innerHTML=list.map(p=>
-    "<div class='si'><span class='tier "+p.kind+"'>"+(p.kind==='bull'?'매수':p.kind==='bear'?'매도':'중립')+"</span>"
-    +"<span class='snm'>"+p.name+" · "+p.bars_ago+"봉 전</span>"
-    +"<span class='cf'>신뢰 "+p.confidence+"%</span></div>").join('');
+    "<div class='pat' data-date='"+p.date+"'>"
+    +"<div class='prow'><span class='tier "+p.kind+"'>"+(p.kind==='bull'?'매수':p.kind==='bear'?'매도':'중립')+"</span>"
+    +"<span class='snm'>"+p.name+"</span><span class='pago'>"+p.bars_ago+"봉 전 →</span></div>"
+    +"<div class='pdesc'>"+(PATTERN_DESC[p.name]||'')+"</div>"
+    +"<div class='pstr'><div class='pbar'><i style='width:"+p.confidence+"%;background:"+sCol(p.kind)+"'></i></div><span>강도 "+p.confidence+"</span></div>"
+    +"</div>").join('');
+  el.querySelectorAll('.pat').forEach(it=>it.onclick=()=>locateBar(it.dataset.date));
+  updateMarkers();
 }
 function renderFundamentals(f){
   const kindEl=document.getElementById('fundKind'), pe=document.getElementById('fundPrice'), ex=document.getElementById('fundExtra');
