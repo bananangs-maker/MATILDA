@@ -42,6 +42,9 @@
   .grp.iv button.on{background:var(--panel2);color:var(--ink)}
   .status{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
   .status.ok{color:var(--go)} .status.err{color:var(--stop)}
+  .srv{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--go);white-space:nowrap}
+  .srv .sdot{width:7px;height:7px;border-radius:50%;background:var(--go);animation:srvpulse 1.6s ease-out infinite}
+  @keyframes srvpulse{0%{box-shadow:0 0 0 0 rgba(43,208,122,.55)}70%{box-shadow:0 0 0 7px rgba(43,208,122,0)}100%{box-shadow:0 0 0 0 rgba(43,208,122,0)}}
   .toggles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
   .toggles button{font-family:var(--mono);font-size:11px;color:var(--faint);background:var(--panel);
     border:1px solid var(--border);border-radius:2px;padding:5px 10px;cursor:pointer;transition:.12s}
@@ -299,8 +302,8 @@
   .ticktape::before{content:'신호';position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;
     padding:0 11px;background:var(--panel2);color:var(--faint);font-family:var(--mono);font-size:10px;
     border-right:1px solid var(--border);z-index:2}
-  .tapeinner{display:flex;gap:26px;white-space:nowrap;padding-left:60px;will-change:transform;
-    animation:tape 32s linear infinite}
+  .tapeinner{display:flex;gap:26px;white-space:nowrap;will-change:transform;
+    animation:tape 38s linear infinite}
   .ticktape:hover .tapeinner{animation-play-state:paused}
   .tapeinner .ti{font-family:var(--mono);font-size:11.5px;display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
   .tapeinner .ti b{font-weight:700}
@@ -322,7 +325,7 @@
   .fcmp-txt{display:flex;flex-direction:column;line-height:1.25}
   .fcmp-l{font-size:10px;color:var(--faint)}
   .fcmp-w{font-size:11.5px;font-weight:600}
-  .fcmp-badge{flex:none;width:30px;height:30px;border-radius:50%;border:2px solid;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700}
+  .fcmp-num{flex:none;font-family:var(--mono);font-size:15px;font-weight:600}
   .fng-tl-lab{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.05em;margin-bottom:4px}
   .fng-tl-lab span{color:var(--muted)}
   .fng-inds{display:flex;flex-direction:column;gap:9px}
@@ -356,6 +359,7 @@
       <button class="on" data-r="1Y">1Y</button><button data-r="2Y">2Y</button>
     </div>
     <div class="status" id="status">차트 불러오는 중…</div>
+    <div class="srv" id="srv"><span class="sdot"></span>실시간</div>
   </div>
   <div class="toggles" id="toggles">
     <button class="on" data-s="bb"><span class="sw" style="background:#8A8F9A"></span>볼린저(20,2)</button>
@@ -1105,6 +1109,7 @@ function refreshSentiment(){ loadFngFull(); }
 const FNG_RATE_KO={'extreme fear':['극단적 공포',C=>C.down],'fear':['공포',C=>C.down],
   'neutral':['중립',C=>C.faint],'greed':['탐욕',C=>C.up],'extreme greed':['극단적 탐욕',C=>C.up]};
 function fngColor(v){return v>=75?C.up:v>=55?'#7DBE5C':v>=45?C.amber:v>=25?'#E08B4D':C.down;}
+function fngBadgeColor(v){return v==null?C.faint:(v<=24?C.down:(v>=75?C.up:C.muted||'#8a8a93'));}
 function rateKo(r){const m=FNG_RATE_KO[(r||'').toLowerCase()];return m?m[0]:(r||'—');}
 async function loadFngFull(){
   try{
@@ -1117,13 +1122,13 @@ function renderFngBlock(d){
   const ov=d.overview||{};
   const sc=ov.score==null?50:ov.score;
   const word=v=>v==null?'—':(v>=75?'극단탐욕':v>=55?'탐욕':v>=45?'중립':v>=25?'공포':'극단공포');
-  const badge=(lab,v)=>{const col=v!=null?fngColor(v):'var(--faint)';
+  const badge=(lab,v)=>{const col=fngBadgeColor(v);
     return "<div class='fcmp'><div class='fcmp-txt'><span class='fcmp-l'>"+lab+"</span><span class='fcmp-w' style='color:"+col+"'>"+word(v)+"</span></div>"
-      +"<span class='fcmp-badge' style='border-color:"+col+";color:"+col+"'>"+(v==null?'—':Math.round(v))+"</span></div>";};
+      +"<span class='fcmp-num' style='color:"+col+"'>"+(v==null?'—':Math.round(v))+"</span></div>";};
   // OVERVIEW: 5단계 라벨 게이지 + 숫자만(작게)
   document.getElementById('fngOverview').innerHTML=
     "<div class='gbox' id='fngGaugeBox'></div>"
-    +"<div class='fng-score' style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"</div>"
+    +"<div class='fng-score' style='color:"+fngBadgeColor(sc)+"'>"+Math.round(sc)+"</div>"
     +"<div class='fcmps'>"+badge('전일',ov.prev_close)+badge('1주 전',ov.prev_week)+badge('1달 전',ov.prev_month)+badge('1년 전',ov.prev_year)+"</div>";
   renderFngGauge(sc);
   // TIMELINE: 다른 차트와 동일한 lightweight-charts (폰트·선 고정 크기)
@@ -1650,8 +1655,10 @@ function renderFlagTicker(){
   const flags=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
     :(soon.length?[]:["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"]);
   const items=soon.concat(flags);
-  // 끊김 없는 무한 스크롤 위해 2벌 복제
-  inner.innerHTML=items.concat(items).join('');
+  // 끊김 없는 무한 스크롤 위해 2벌 복제. 내용 동일하면 다시 그리지 않음(애니메이션 리셋 방지)
+  const html=items.concat(items).join('');
+  if(inner.dataset.html===html)return;
+  inner.dataset.html=html; inner.innerHTML=html;
 }
 async function loadMktTape(){
   const inner=document.getElementById('mktTapeInner'); if(!inner)return;
@@ -1666,7 +1673,8 @@ async function loadMktTape(){
       return "<span class='mkti'><span class='mlab'>"+t.label+"</span> "+(t.unit||'')+fmt(t.price)
         +" <span class='mpct "+cls+"'>"+arr+Math.abs(t.pct).toFixed(2)+"%</span></span>";
     });
-    inner.innerHTML=items.concat(items).join('');
+    const html=items.concat(items).join('');
+    if(inner.dataset.html!==html){inner.dataset.html=html; inner.innerHTML=html;}
   }catch(e){document.getElementById('mktTape').style.display='none';}
 }
 function renderCrosses(list){
