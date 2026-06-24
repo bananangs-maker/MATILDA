@@ -65,6 +65,39 @@ def _from_stooq(ticker: str) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
 
 
+MARKET_TICKERS = [
+    ("USD/KRW", "원/달러", "₩", 1),
+    ("BTC/USD", "비트코인", "$", 0),
+    ("XAU/USD", "금", "$", 1),
+    ("WTI", "WTI 유가", "$", 2),
+]
+
+
+def market_quotes() -> list:
+    """환율·비트코인·금·유가 실시간 시세 (Twelve Data /quote 배치). 종목별 graceful 실패."""
+    key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("TWELVEDATA_API_KEY 미설정")
+    syms = ",".join(t[0] for t in MARKET_TICKERS)
+    r = requests.get("https://api.twelvedata.com/quote",
+                     params={"symbol": syms, "apikey": key}, headers=UA, timeout=12)
+    r.raise_for_status()
+    j = r.json() or {}
+    out = []
+    for sym, label, unit, dec in MARKET_TICKERS:
+        o = j.get(sym) if (isinstance(j, dict) and sym in j) else (j if j.get("symbol") == sym else None)
+        try:
+            if not o or o.get("status") == "error" or o.get("close") in (None, ""):
+                out.append({"symbol": sym, "label": label, "unit": unit, "price": None})
+                continue
+            price = float(o["close"]); pct = float(o.get("percent_change") or 0)
+            out.append({"symbol": sym, "label": label, "unit": unit,
+                        "price": round(price, dec), "pct": round(pct, 2)})
+        except Exception:
+            out.append({"symbol": sym, "label": label, "unit": unit, "price": None})
+    return out
+
+
 def daily_ohlcv(ticker: str, yrange: str = "2y") -> tuple[pd.DataFrame, str]:
     ticker = ticker.upper()
     if not valid_ticker(ticker):

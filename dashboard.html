@@ -278,6 +278,12 @@
   .tapeinner .dot{width:5px;height:5px;border-radius:50%}
   .ti.danger .dot{background:var(--stop)} .ti.warn .dot{background:var(--caution)} .ti.info .dot{background:var(--steel)}
   @keyframes tape{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  .ticktape.mkt{margin-bottom:0}
+  .ticktape.mkt::before{content:'시세'}
+  .ticktape.mkt .tapeinner{animation-duration:40s}
+  .mkti{font-family:var(--mono);font-size:11.5px;display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
+  .mkti .mlab{color:var(--muted)}
+  .mkti .mpct.up{color:var(--go)} .mkti .mpct.down{color:var(--stop)} .mkti .mpct.flat{color:var(--faint)}
   .fng-ov{margin-bottom:12px}
   .fng-ov #fngGaugeBox{max-width:200px;margin:0 auto}
   .fng-score{text-align:center;font-family:var(--disp);font-weight:700;font-size:30px;line-height:1;margin-top:-8px}
@@ -333,6 +339,7 @@
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
   </div>
+  <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
   <div class="main">
     <div class="charts">
@@ -1500,6 +1507,22 @@ function renderFlagTicker(){
   // 끊김 없는 무한 스크롤 위해 2벌 복제
   inner.innerHTML=items.concat(items).join('');
 }
+async function loadMktTape(){
+  const inner=document.getElementById('mktTapeInner'); if(!inner)return;
+  try{
+    const d=await (await fetch('/tickers')).json();
+    const ts=(d.tickers||[]).filter(t=>t.price!=null);
+    if(!ts.length){document.getElementById('mktTape').style.display='none';return;}
+    document.getElementById('mktTape').style.display='';
+    const fmt=n=>n>=1000?n.toLocaleString('en-US'):n;
+    const items=ts.map(t=>{
+      const cls=t.pct>0.01?'up':t.pct<-0.01?'down':'flat', arr=t.pct>0.01?'▲':t.pct<-0.01?'▼':'·';
+      return "<span class='mkti'><span class='mlab'>"+t.label+"</span> "+(t.unit||'')+fmt(t.price)
+        +" <span class='mpct "+cls+"'>"+arr+Math.abs(t.pct).toFixed(2)+"%</span></span>";
+    });
+    inner.innerHTML=items.concat(items).join('');
+  }catch(e){document.getElementById('mktTape').style.display='none';}
+}
 function renderCrosses(list){
   const el=document.getElementById('crossList');
   if(!list||!list.length){el.innerHTML="<div class='none'>최근 크로스 신호 없음</div>";return;}
@@ -1722,7 +1745,7 @@ function initAlerts(){
   document.getElementById('alNow').onclick=()=>checkAlerts(true);
   startAlerts();
 }
-if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();loadFngFull();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>

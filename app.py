@@ -50,6 +50,7 @@ _TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 _FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
+_MKT = {"data": None, "ts": 0.0}    # 환율·유가·금·BTC 시세 캐시 (3분)
 
 
 def _sentiment_cached():
@@ -213,6 +214,28 @@ def seasonality_route(ticker):
         return jsonify(se.seasonality(df))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/tickers")
+def tickers_route():
+    if USE_MOCK:
+        import random
+        r = random.Random(int(time.time() // 180))
+        demo = [("USD/KRW", "원/달러", "₩", 1387.5, 1), ("BTC/USD", "비트코인", "$", 64210, 0),
+                ("XAU/USD", "금", "$", 3012.4, 1), ("WTI", "WTI 유가", "$", 71.83, 2)]
+        return jsonify({"tickers": [{"symbol": s, "label": l, "unit": u,
+                        "price": round(p, d), "pct": round(r.uniform(-2.2, 2.2), 2)} for s, l, u, p, d in demo]})
+    global _MKT
+    try:
+        if _MKT["data"] is not None and time.time() - _MKT["ts"] < 180:
+            return jsonify({"tickers": _MKT["data"]})
+        from public_data import market_quotes
+        q = market_quotes(); _MKT["data"] = q; _MKT["ts"] = time.time()
+        return jsonify({"tickers": q})
+    except Exception as e:
+        if _MKT["data"]:
+            return jsonify({"tickers": _MKT["data"]})
+        return jsonify({"tickers": [], "error": str(e)})
 
 
 @app.route("/fng_full")
