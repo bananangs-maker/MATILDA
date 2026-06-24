@@ -424,9 +424,9 @@ def compute_series(df: pd.DataFrame) -> dict:
     for i in range(len(df)):
         c_up = df["close"][i] >= df["open"][i]
         vol.append({"time": dates[i], "value": float(df["volume"][i]),
-                    "color": "rgba(61,214,140,.45)" if c_up else "rgba(255,90,77,.45)"})
+                    "color": "rgba(38,194,129,.45)" if c_up else "rgba(242,54,69,.45)"})
 
-    hist_color = lambda v: ("#3DD68C" if v >= 0 else "#FF5A4D")
+    hist_color = lambda v: ("#26C281" if v >= 0 else "#F23645")
     ku, km, kl = keltner(df)
     du, dm, dl = donchian(df)
     conv, base, spanA, spanB = ichimoku(df)

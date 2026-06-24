@@ -8,8 +8,8 @@ patterns.py
 import numpy as np
 import pandas as pd
 
-UP = "#3DD68C"
-DN = "#FF5A4D"
+UP = "#26C281"
+DN = "#F23645"
 
 # (fast, slow, tier) — tier 1 = 가장 강력
 MA_PAIRS = [(50, 200, 1), (20, 60, 2), (5, 20, 3)]
