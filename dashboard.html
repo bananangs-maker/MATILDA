@@ -58,8 +58,12 @@
     background:var(--panel2);border:1px solid var(--border);border-radius:2px;padding:5px 12px;cursor:pointer}
   .osc-tabs button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
   #osc{height:170px}
-  #deckmason{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+  #deckmason{margin-top:12px}
+  .topband{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:stretch;margin-bottom:10px}
+  @media(max-width:900px){.topband{grid-template-columns:1fr}}
+  #masonbody{display:flex;gap:10px;align-items:flex-start}
   .dm-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .stack{display:flex;flex-direction:column;gap:10px}
   .psrow,.kl-inrow{display:flex;align-items:center;gap:8px;margin:8px 0}
   .psrow label,.kl-inrow label{font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap}
   .psrow input,.kl-inrow input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--border);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px 8px}
@@ -416,6 +420,7 @@
     </div>
   </div>
   <div id="deckmason">
+    <div class="topband">
       <div class="card final">
         <div class="lab">최종 판정</div>
         <div style="display:flex;align-items:center;gap:13px">
@@ -431,47 +436,96 @@
         <div class="macrostat" id="macroStat"></div>
         <div class="eng-metrics" id="engMetrics"></div>
       </div>
-
-<div class="card">
+      <div class="card">
         <div class="lab">리스크 티어 <span class="hint">엔진 판정 분해</span></div>
         <div class="row"><span class="k">T0 · 레짐</span><span class="v" id="vRegime">—</span></div>
         <div class="row"><span class="k">T1·T2 · 추세</span><span class="v" id="vTrend">—</span></div>
         <div class="row"><span class="k">T3 · 타이밍</span><span class="v" id="vTiming">—</span></div>
         <div class="bbnote" id="bbnote">—</div>
       </div>
-
-<div class="card">
+      <div class="card">
         <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
         <div class="senti" id="fundPrice"></div>
         <div id="fundExtra"></div>
       </div>
-
-<div class="card">
-        <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
-        <div class="siglist" id="candleList"></div>
+    </div>
+    <div id="masonbody">
+      <div class="stack">
+        <div class="card">
+          <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
+          <div class="siglist" id="candleList"></div>
+        </div>
+        <div class="card">
+          <div class="lab">차트 패턴 <span class="hint">자동탐지 · 오탐 큼(참고용)</span></div>
+          <div class="siglist" id="cpatList"></div>
+        </div>
       </div>
-      <div class="card">
-        <div class="lab">차트 패턴 <span class="hint">자동탐지 · 오탐 큼(참고용)</span></div>
-        <div class="siglist" id="cpatList"></div>
+      <div class="stack">
+        <div class="card">
+          <div class="lab">신호 충돌 · 경고</div>
+          <div class="flags" id="flags"></div>
+        </div>
+        <div class="card">
+          <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
+          <div class="siglist" id="crossList"></div>
+        </div>
       </div>
-
-<div class="card">
-        <div class="lab">이평 크로스 신호 <span class="hint">중요도 제1~제3</span></div>
-        <div class="siglist" id="crossList"></div>
+      <div class="stack">
+        <div class="card" id="fngCard">
+          <div class="lab">공포·탐욕 상세 (CNN) <span id="fngRefresh" style="cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
+          <div class="fng-ov" id="fngOverview"></div>
+          <div class="fng-tl-lab">타임라인 <span id="fngTlNow"></span></div>
+          <div id="fngTimeline"></div>
+          <div class="fng-tl-lab" style="margin-top:10px">구성 지표 7</div>
+          <div class="fng-inds" id="fngIndicators"></div>
+        </div>
+        <div class="card" id="mtfCard">
+          <div class="lab">다중 타임프레임 <span class="hint">일·주·월 추세</span></div>
+          <div id="mtfBox"><div class="none">불러오는 중…</div></div>
+        </div>
       </div>
-
-<div class="card">
-        <div class="lab">신호 충돌 · 경고</div>
-        <div class="flags" id="flags"></div>
-      </div>
-
-      <div class="card" id="fngCard">
-        <div class="lab">공포·탐욕 상세 (CNN) <span id="fngRefresh" style="cursor:pointer;color:var(--steel)">↻ 갱신</span></div>
-        <div class="fng-ov" id="fngOverview"></div>
-        <div class="fng-tl-lab">타임라인 <span id="fngTlNow"></span></div>
-        <div id="fngTimeline"></div>
-        <div class="fng-tl-lab" style="margin-top:10px">구성 지표 7</div>
-        <div class="fng-inds" id="fngIndicators"></div>
+      <div class="stack">
+        <div class="card">
+          <div class="lab">신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></div>
+          <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
+            <button class="minibtn" id="alPerm">권한 요청</button>
+            <button class="minibtn" id="alNow">지금 점검</button></div>
+          <div class="alconds" id="alConds">
+            <label><input type="checkbox" data-c="t0" checked> 리스크 급등(T0)</label>
+            <label><input type="checkbox" data-c="ma200" checked> 200일선 이탈/회복</label>
+            <label><input type="checkbox" data-c="cross" checked> 골든·데드 크로스</label>
+            <label><input type="checkbox" data-c="rsi" checked> RSI 과매수/과매도</label>
+            <label><input type="checkbox" data-c="crash" checked> 급락 감지</label>
+          </div>
+          <div class="alrow2">
+            <label class="alsw"><input type="checkbox" id="alSound" checked> 소리</label>
+            <span>주기</span>
+            <select id="alInterval"><option value="5">5분</option><option value="10" selected>10분</option><option value="15">15분</option><option value="30">30분</option></select>
+            <span class="hint" id="alRiskTh"></span>
+          </div>
+          <div class="allog" id="alLog"></div>
+        </div>
+        <div class="card">
+          <details id="setBox">
+            <summary>지표 임계값 설정</summary>
+            <div class="numgrid">
+              <div class="nf"><span>RSI 과매수</span><input type="number" data-set="rsiOB"></div>
+              <div class="nf"><span>RSI 과매도</span><input type="number" data-set="rsiOS"></div>
+              <div class="nf"><span>MFI 과매수</span><input type="number" data-set="mfiOB"></div>
+              <div class="nf"><span>MFI 과매도</span><input type="number" data-set="mfiOS"></div>
+              <div class="nf"><span>VIX 경계≥</span><input type="number" data-set="vixAmber"></div>
+              <div class="nf"><span>VIX 위험≥</span><input type="number" data-set="vixRed"></div>
+              <div class="nf"><span>탐욕 과열≥</span><input type="number" data-set="fngHot"></div>
+              <div class="nf"><span>상한 GREEN%</span><input type="number" data-set="ceilG"></div>
+              <div class="nf"><span>상한 AMBER%</span><input type="number" data-set="ceilA"></div>
+              <div class="nf"><span>상한 RED%</span><input type="number" data-set="ceilR"></div>
+              <div class="nf"><span>급락일 ≤-%</span><input type="number" data-set="crashDay"></div>
+              <div class="nf"><span>고점낙폭 ≤-%</span><input type="number" data-set="crashDD"></div>
+              <div class="nf"><span>이격 과열 ≥%</span><input type="number" data-set="extMax"></div>
+            </div>
+            <button class="reset" id="setReset">기본값 복원</button>
+          </details>
+        </div>
       </div>
       <div class="card sumcard">
         <div class="lab">기술 요약 <span class="hint">26개 지표 종합 · 트레이딩뷰식</span></div>
@@ -489,8 +543,19 @@
         <div class="lab">주요 이벤트 <span class="hint">FOMC · 네마녀 · 선거</span></div>
         <div class="evtlist" id="evtList"></div>
       </div>
-      <div class="decksep"><span>입력 · 도구</span></div>
-<div class="card macro">
+      <div class="card" id="posSizeCard">
+        <div class="lab">포지션 사이징 <span class="hint">권장 비중 기반 실투입</span></div>
+        <div class="psrow"><label>계좌 금액 ($)</label><input type="number" id="psAcct" placeholder="예: 10000"></div>
+        <div class="psout" id="psOut"><div class="none">계좌 금액을 입력하세요</div></div>
+      </div>
+      <div class="card" id="riskToolCard">
+        <div class="lab">켈리 · 손절 제안 <span class="hint">변동성 기반 · 가정 입력</span></div>
+        <div class="kl-stop" id="klStop"></div>
+        <div class="kl-inrow"><label>승률%</label><input id="klWin" type="number" value="55" step="1">
+          <label>손익비</label><input id="klRR" type="number" value="1.5" step="0.1"></div>
+        <div id="klOut"></div>
+      </div>
+      <div class="card macro">
         <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정(what-if)</span></div>
         <label>VIX <span class="val" id="vixv">18</span>
           <span class="mtag" id="vixTag" style="display:none">수동 <span class="rev" id="vixRev">↻ 자동(<span id="vixAuto">—</span>)</span></span></label>
@@ -508,70 +573,11 @@
           <button class="minibtn ghost" id="fibClear">지우기</button>
         </div>
       </div>
-
-<div class="card">
-        <details id="setBox">
-          <summary>지표 임계값 설정</summary>
-          <div class="numgrid">
-            <div class="nf"><span>RSI 과매수</span><input type="number" data-set="rsiOB"></div>
-            <div class="nf"><span>RSI 과매도</span><input type="number" data-set="rsiOS"></div>
-            <div class="nf"><span>MFI 과매수</span><input type="number" data-set="mfiOB"></div>
-            <div class="nf"><span>MFI 과매도</span><input type="number" data-set="mfiOS"></div>
-            <div class="nf"><span>VIX 경계≥</span><input type="number" data-set="vixAmber"></div>
-            <div class="nf"><span>VIX 위험≥</span><input type="number" data-set="vixRed"></div>
-            <div class="nf"><span>탐욕 과열≥</span><input type="number" data-set="fngHot"></div>
-            <div class="nf"><span>상한 GREEN%</span><input type="number" data-set="ceilG"></div>
-            <div class="nf"><span>상한 AMBER%</span><input type="number" data-set="ceilA"></div>
-            <div class="nf"><span>상한 RED%</span><input type="number" data-set="ceilR"></div>
-            <div class="nf"><span>급락일 ≤-%</span><input type="number" data-set="crashDay"></div>
-            <div class="nf"><span>고점낙폭 ≤-%</span><input type="number" data-set="crashDD"></div>
-            <div class="nf"><span>이격 과열 ≥%</span><input type="number" data-set="extMax"></div>
-          </div>
-          <button class="reset" id="setReset">기본값 복원</button>
-        </details>
-      </div>
-
-<div class="card">
+      <div class="card">
         <div class="lab">그리기 목록 <span id="drawSync" style="float:right;font-size:9.5px;color:var(--faint)">로컬 저장</span></div>
         <div class="dlist" id="dlist"></div>
       </div>
-
-<div class="card">
-        <div class="lab">신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></div>
-        <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
-          <button class="minibtn" id="alPerm">권한 요청</button>
-          <button class="minibtn" id="alNow">지금 점검</button></div>
-        <div class="alconds" id="alConds">
-          <label><input type="checkbox" data-c="t0" checked> 리스크 급등(T0)</label>
-          <label><input type="checkbox" data-c="ma200" checked> 200일선 이탈/회복</label>
-          <label><input type="checkbox" data-c="cross" checked> 골든·데드 크로스</label>
-          <label><input type="checkbox" data-c="rsi" checked> RSI 과매수/과매도</label>
-          <label><input type="checkbox" data-c="crash" checked> 급락 감지</label>
-        </div>
-        <div class="alrow2">
-          <label class="alsw"><input type="checkbox" id="alSound" checked> 소리</label>
-          <span>주기</span>
-          <select id="alInterval"><option value="5">5분</option><option value="10" selected>10분</option><option value="15">15분</option><option value="30">30분</option></select>
-          <span class="hint" id="alRiskTh"></span>
-        </div>
-        <div class="allog" id="alLog"></div>
-      </div>
-      <div class="card" id="posSizeCard">
-        <div class="lab">포지션 사이징 <span class="hint">권장 비중 기반 실투입</span></div>
-        <div class="psrow"><label>계좌 금액 ($)</label><input type="number" id="psAcct" placeholder="예: 10000"></div>
-        <div class="psout" id="psOut"><div class="none">계좌 금액을 입력하세요</div></div>
-      </div>
-      <div class="card" id="mtfCard">
-        <div class="lab">다중 타임프레임 <span class="hint">일·주·월 추세</span></div>
-        <div id="mtfBox"><div class="none">불러오는 중…</div></div>
-      </div>
-      <div class="card" id="riskToolCard">
-        <div class="lab">켈리 · 손절 제안 <span class="hint">변동성 기반 · 가정 입력</span></div>
-        <div class="kl-stop" id="klStop"></div>
-        <div class="kl-inrow"><label>승률%</label><input id="klWin" type="number" value="55" step="1">
-          <label>손익비</label><input id="klRR" type="number" value="1.5" step="0.1"></div>
-        <div id="klOut"></div>
-      </div>
+    </div>
   </div>
   <div class="summary">
     <h3>역사적 계절성 <span class="ssub">연도별 연초 대비 누적수익률 — 과거 데이터, 예측 아님</span>
@@ -1879,14 +1885,11 @@ async function loadMtf(){
 /* ---------- 데크 메이슨리: 카드를 가장 짧은 컬럼에 채워 공백 최소화 ---------- */
 let _masonRO=null;
 function layoutMason(){
-  const host=document.getElementById('deckmason'); if(!host)return;
+  const host=document.getElementById('masonbody'); if(!host)return;
   if(!host._cards){host._cards=Array.from(host.children).filter(el=>!el.classList.contains('dm-col'));}
   const cards=host._cards; if(!cards.length)return;
   const w=host.clientWidth;
   const n=w>=1500?4:w>=1080?3:w>=680?2:1;
-  if(host._n===n && host._built){
-    // 컬럼 수 동일 → 재배치만(높이 변동 반영)
-  }
   host._n=n; host._built=true;
   host.innerHTML='';
   const cols=[];
@@ -1895,7 +1898,6 @@ function layoutMason(){
     let m=0; for(let i=1;i<n;i++){if(cols[i].offsetHeight<cols[m].offsetHeight)m=i;}
     cols[m].appendChild(card);
   });
-  // 카드 내부 lightweight-charts(공포탐욕 타임라인) 폭 보정
   try{ if(typeof fngTlChart!=='undefined'&&fngTlChart){const el=document.getElementById('fngTimeline'); if(el&&el.clientWidth)fngTlChart.applyOptions({width:el.clientWidth});} }catch(e){}
 }
 function scheduleMason(){clearTimeout(window._mt);window._mt=setTimeout(layoutMason,60);}
