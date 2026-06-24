@@ -331,6 +331,7 @@
         <button data-o="stoch">스토캐스틱</button>
         <button data-o="cmf">CMF</button>
         <button data-o="willr">Williams %R</button>
+        <button data-o="fng">공포·탐욕</button>
       </div>
       <div id="osc"></div>
     </div>
@@ -389,6 +390,7 @@
           <div class="chip"><div class="n" id="cPress">—</div><div class="l">매수압력%</div></div>
         </div>
         <div class="btnote" id="sentiNote">↻ 갱신을 누르면 CNN에서 자동으로 가져옵니다.</div>
+        <div id="fngSpark" style="margin-top:8px"></div>
       </div>
       <div class="decksep"><span>입력 · 도구</span></div>
 <div class="card macro">
@@ -544,6 +546,7 @@ const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
            vwap:false,ichi:false,kelt:false,donch:false,pat:false},
   patternMarkers:[],
   flags:[],
+  fngHist:null,
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
@@ -639,6 +642,12 @@ function renderOsc(){
   else if(state.osc==='stoch'){oscSeries.k=addLine(d.stoch_k,C.steel,1.5);oscSeries.d=addLine(d.stoch_d,C.amber,1.2);ref(oscSeries.k,80,C.down);ref(oscSeries.k,20,C.up);}
   else if(state.osc==='cmf'){oscSeries.m=addLine(d.cmf,C.purple);ref(oscSeries.m,0,C.faint);}
   else if(state.osc==='willr'){oscSeries.m=addLine(d.willr,C.steel);ref(oscSeries.m,-20,C.down);ref(oscSeries.m,-80,C.up);}
+  else if(state.osc==='fng'){
+    if(state.fngHist&&state.fngHist.length){
+      oscSeries.m=addLine(state.fngHist,C.amber,1.8);
+      ref(oscSeries.m,75,C.up);ref(oscSeries.m,50,C.faint);ref(oscSeries.m,25,C.down);
+    }else{ loadFngHist(true); }   // 없으면 받아서 다시 렌더
+  }
   else if(state.osc==='macd'){
     oscSeries.h=oscChart.addHistogramSeries({priceLineVisible:false,lastValueVisible:false});
     oscSeries.h.setData(d.macd_hist);
@@ -947,11 +956,37 @@ async function fetchSentiment(){
     // 거시 슬라이더는 엔진 응답(engine.macro)이 단독으로 동기화 — 여기선 시장심리 카드만 갱신
     decide();
     note.innerHTML='CNN 갱신 완료 · 공포탐욕 자동 입력됨'+(d.vix_raw!=null?' · VIX 자동':' · VIX는 수동(원시값 미제공)')+'. 풋콜/VIX는 CNN 정규화 점수(0~100)입니다.';
+    loadFngHist(false);
   }catch(e){
     note.textContent='CNN 심리 가져오기 실패: '+e.message+' — VIX·공포탐욕은 직접 입력하세요.';
   }
 }
 document.getElementById('sentiBtn').onclick=fetchSentiment;
+
+async function loadFngHist(rerender){
+  try{
+    const d=await (await fetch('/fng_history')).json();
+    if(d.series&&d.series.length){
+      state.fngHist=d.series;
+      renderFngSpark();
+      if(rerender&&state.osc==='fng')renderOsc();
+    }
+  }catch(e){}
+}
+function renderFngSpark(){
+  const box=document.getElementById('fngSpark'); if(!box||!state.fngHist)return;
+  const s=state.fngHist.slice(-90), W=260,H=40;
+  const xs=(i)=>i/(s.length-1)*W, ys=(v)=>H-(v/100)*H;
+  const cur=s[s.length-1].value;
+  const col=cur>=75?C.up:cur<=25?C.down:C.amber;
+  const path=s.map((p,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(p.value).toFixed(1)).join(' ');
+  box.innerHTML="<svg viewBox='0 0 "+W+" "+H+"' style='width:100%;height:40px'>"
+    +"<line x1='0' y1='"+ys(75)+"' x2='"+W+"' y2='"+ys(75)+"' stroke='"+C.up+"' stroke-width='.5' opacity='.4' stroke-dasharray='3 3'/>"
+    +"<line x1='0' y1='"+ys(25)+"' x2='"+W+"' y2='"+ys(25)+"' stroke='"+C.down+"' stroke-width='.5' opacity='.4' stroke-dasharray='3 3'/>"
+    +"<path d='"+path+"' fill='none' stroke='"+col+"' stroke-width='1.6' stroke-linejoin='round'/>"
+    +"<circle cx='"+xs(s.length-1)+"' cy='"+ys(cur)+"' r='2.5' fill='"+col+"'/></svg>"
+    +"<div style='font-size:9.5px;color:var(--faint);font-family:var(--mono);margin-top:2px'>최근 90일 공포·탐욕 (위=탐욕 75 / 아래=공포 25)</div>";
+}
 
 /* ---------- 백테스트 ---------- */
 function makeBtChart(){
@@ -1623,7 +1658,7 @@ function initAlerts(){
   document.getElementById('alNow').onclick=()=>checkAlerts(true);
   startAlerts();
 }
-if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();initAlerts();loadFngHist(false);}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>

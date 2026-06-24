@@ -48,6 +48,7 @@ import time
 _CACHE = {}          # ticker -> (df, source, fetched_at)
 _TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 후 빠른 응답)
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
+_FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 
 
 def _sentiment_cached():
@@ -211,6 +212,31 @@ def seasonality_route(ticker):
         return jsonify(se.seasonality(df))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/fng_history")
+def fng_history_route():
+    if USE_MOCK:
+        import math, datetime
+        base = datetime.date.today()
+        out = []
+        for i in range(180, 0, -1):
+            d = (base - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+            v = 50 + 28 * math.sin(i / 18.0) + 6 * math.sin(i / 3.0)
+            out.append({"time": d, "value": round(max(2, min(98, v)), 1)})
+        return jsonify({"series": out})
+    global _FNGH
+    try:
+        if _FNGH["data"] is not None and time.time() - _FNGH["ts"] < _TTL:
+            return jsonify({"series": _FNGH["data"]})
+        from sentiment import fng_history
+        s = fng_history()
+        _FNGH["data"] = s; _FNGH["ts"] = time.time()
+        return jsonify({"series": s})
+    except Exception as e:
+        if _FNGH["data"]:
+            return jsonify({"series": _FNGH["data"]})
+        return jsonify({"series": [], "error": str(e)})
 
 
 @app.route("/sentiment")

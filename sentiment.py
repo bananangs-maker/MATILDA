@@ -23,6 +23,35 @@ def _comp(j, key):
              "rating": o.get("rating")})
 
 
+def fng_history(days: int = 240) -> list:
+    """CNN 공포탐욕 과거 시계열 → [{time:'YYYY-MM-DD', value:int}] (오래된→최신)."""
+    import datetime as _dt
+    r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+                     headers=UA, timeout=12)
+    r.raise_for_status()
+    j = r.json()
+    fgh = j.get("fear_and_greed_historical", {}) or {}
+    data = fgh.get("data") if isinstance(fgh, dict) else (fgh if isinstance(fgh, list) else None)
+    out = []
+    for p in (data or []):
+        try:
+            x = p.get("x") if isinstance(p, dict) else p[0]
+            y = p.get("y") if isinstance(p, dict) else p[1]
+            if x is None or y is None:
+                continue
+            ts = float(x) / 1000.0 if float(x) > 1e11 else float(x)
+            d = _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+            out.append({"time": d, "value": round(float(y), 1)})
+        except Exception:
+            continue
+    # 날짜 중복 제거(마지막 값 유지) + 정렬
+    dedup = {}
+    for o in out:
+        dedup[o["time"]] = o["value"]
+    series = [{"time": k, "value": v} for k, v in sorted(dedup.items())]
+    return series[-days:] if days else series
+
+
 def cnn_sentiment() -> dict:
     r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
                      headers=UA, timeout=12)
