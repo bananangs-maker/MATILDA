@@ -263,6 +263,11 @@
   .pat .pbar i{display:block;height:100%;border-radius:3px;transition:width .6s ease}
   .pat .pstr span{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
   .tier.bull{background:rgba(38,194,129,.16);color:var(--go)} .tier.bear{background:rgba(242,54,69,.16);color:var(--stop)}
+  .cpat{padding:8px 9px;border-radius:8px;background:var(--panel2);margin-bottom:6px}
+  .cpat .cprow{display:flex;align-items:center;gap:7px}
+  .cpat .snm{flex:1;font-size:12px;color:var(--ink);font-weight:600;font-family:var(--mono)}
+  .cpat .cfp{font-family:var(--mono);font-size:10.5px;font-weight:700;white-space:nowrap}
+  .cpat .pdesc{font-size:10px;color:var(--faint);margin-top:4px}
   .macrostat{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px}
   .ticktape{overflow:hidden;background:var(--panel);border:1px solid var(--border);border-radius:10px;
     margin:10px 0;height:34px;display:flex;align-items:center;position:relative}
@@ -337,6 +342,7 @@
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
+    <button data-s="cpat"><span class="sw" style="background:#B98AFF"></span>차트패턴</button>
   </div>
   <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
@@ -400,6 +406,11 @@
 <div class="card">
         <div class="lab">캔들 패턴 <span class="hint">보조 · 오탐 주의</span></div>
         <div class="siglist" id="candleList"></div>
+      </div>
+
+      <div class="card">
+        <div class="lab">차트 패턴 <span class="hint">자동탐지 · 오탐 큼(참고용)</span></div>
+        <div class="siglist" id="cpatList"></div>
       </div>
 
 <div class="card">
@@ -570,8 +581,9 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false,pat:false},
+           vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false},
   patternMarkers:[],
+  cpatMarkers:[],
   flags:[],
   fngFull:null,
   macro:{vix:18,fng:50}, data:null, signals:null, markers:[],
@@ -628,11 +640,47 @@ function applyToggles(){
   vol.applyOptions({visible:state.toggles.vol});
   updateMarkers();
 }
+let patternShapes=[];
+function clearPatternShapes(){patternShapes.forEach(s=>{try{priceChart.removeSeries(s);}catch(e){}});patternShapes=[];}
+function renderChartPatterns(){
+  if(!priceChart)return;
+  clearPatternShapes(); state.cpatMarkers=[];
+  const d=state.data, list=(d&&d.chart_patterns)||[];
+  if(state.toggles.cpat){
+    list.forEach(p=>{
+      const col=p.dir==='bull'?C.up:C.down;
+      (p.lines||[]).forEach(pts=>{
+        if(!pts||pts.length<2)return;
+        const s=priceChart.addLineSeries({color:col,lineWidth:1,lineStyle:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+        s.setData(pts.map(pt=>({time:pt.time,value:pt.value})));
+        patternShapes.push(s);
+      });
+      if(p.marker){
+        state.cpatMarkers.push({time:p.marker.time,position:p.marker.position||(p.dir==='bull'?'belowBar':'aboveBar'),
+          color:col,shape:p.dir==='bull'?'arrowUp':'arrowDown',text:p.name+' · 오탐 '+p.false_pct+'%'});
+      }
+    });
+  }
+  updateMarkers();
+}
+function renderChartPatternList(list){
+  const el=document.getElementById('cpatList'); if(!el)return;
+  if(!list||!list.length){el.innerHTML="<div class='none'>최근 차트 패턴 없음</div>";return;}
+  el.innerHTML=list.map(p=>{
+    const col=p.dir==='bull'?C.up:C.down, kind=p.dir==='bull'?'매수':'매도';
+    const fcol=p.false_pct>=60?C.down:p.false_pct>=45?C.caution:C.up;
+    return "<div class='cpat'><div class='cprow'><span class='tier "+(p.dir==='bull'?'bull':'bear')+"'>"+kind+"</span>"
+      +"<span class='snm'>"+p.name+(p.confirmed?'':' <i style=\"color:var(--faint);font-style:normal\">(형성중)</i>')+"</span>"
+      +"<span class='cfp' style='color:"+fcol+"'>오탐 "+p.false_pct+"%</span></div>"
+      +"<div class='pdesc'>"+(p.name_ko||'')+(p.confirmed?' · 넥라인 돌파 확정':' · 미확정')+"</div></div>";
+  }).join('');
+}
 function updateMarkers(){
   if(!candle)return;
   let m=[];
   if(state.toggles.sig&&state.markers)m=m.concat(state.markers);
   if(state.toggles.pat&&state.patternMarkers)m=m.concat(state.patternMarkers);
+  if(state.toggles.cpat&&state.cpatMarkers)m=m.concat(state.cpatMarkers);
   m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
   candle.setMarkers(m);
 }
@@ -707,6 +755,7 @@ async function load(){
     renderPrice(d); renderOsc(); decide(); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
+    renderChartPatternList(d.chart_patterns); renderChartPatterns();
     renderFundamentals(d.fundamentals);
     document.getElementById('lastpx').textContent='$'+d.meta.last;
     st.className='status ok';
@@ -852,7 +901,8 @@ document.querySelectorAll('#tf button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tf button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.range=b.dataset.r;applyTimeframe();});
 document.querySelectorAll('#toggles button').forEach(b=>b.onclick=()=>{
-  const k=b.dataset.s;state.toggles[k]=!state.toggles[k];b.classList.toggle('on',state.toggles[k]);applyToggles();});
+  const k=b.dataset.s;state.toggles[k]=!state.toggles[k];b.classList.toggle('on',state.toggles[k]);
+  if(k==='cpat')renderChartPatterns(); else applyToggles();});
 document.querySelectorAll('#osc-tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#osc-tabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.osc=b.dataset.o;renderOsc();});

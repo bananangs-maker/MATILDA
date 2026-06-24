@@ -122,6 +122,11 @@ def chart(ticker):
         payload["cross_markers"] = cross_marks
         payload["candles_patterns"] = pat.detect_candles(df)
         try:
+            import chart_patterns as cpat
+            payload["chart_patterns"] = cpat.detect(df)
+        except Exception as ce:
+            payload["chart_patterns"] = []
+        try:
             import fundamentals as fund
             payload["fundamentals"] = fund.metrics(ticker, df)
         except Exception as fe:
