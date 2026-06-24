@@ -241,6 +241,8 @@
   .toast .tm{font-size:11.5px;color:var(--muted);line-height:1.5}
   @keyframes toastin{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
   @keyframes toastout{to{transform:translateX(40px);opacity:0}}
+  .mtag{font-size:9.5px;font-family:var(--mono);color:var(--caution);margin-left:6px}
+  .mtag .rev{color:var(--steel);cursor:pointer;text-decoration:underline}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -334,10 +336,12 @@
         <div class="bbnote" id="bbnote">—</div>
       </div>
       <div class="card macro">
-        <div class="lab">거시 · 구조 (직접 입력)</div>
-        <label>VIX <span class="val" id="vixv">18</span></label>
+        <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정 가능</span></div>
+        <label>VIX <span class="val" id="vixv">18</span>
+          <span class="mtag" id="vixTag" style="display:none">수동 <span class="rev" id="vixRev">↻ 자동(<span id="vixAuto">—</span>)</span></span></label>
         <input type="range" id="vix" min="10" max="55" value="18" step="0.5">
-        <label>공포·탐욕 <span class="val" id="fngv">50</span></label>
+        <label>공포·탐욕 <span class="val" id="fngv">50</span>
+          <span class="mtag" id="fngTag" style="display:none">수동 <span class="rev" id="fngRev">↻ 자동(<span id="fngAuto">—</span>)</span></span></label>
         <input type="range" id="fng" min="0" max="100" value="50" step="1">
         <label>피보나치 (스윙 고가 / 저가)</label>
         <div class="fibrow">
@@ -478,7 +482,7 @@
     <div id="jTableWrap"></div>
   </div>
   <footer>
-    공개 시세(Yahoo Finance / Stooq) 기반 · 지연/일봉 데이터입니다. 가격 기반 지표는 자동, VIX·공포탐욕·구조는 직접 입력.<br>
+    공개 시세(Yahoo Finance / Stooq) 기반 · 지연/일봉 데이터입니다. 가격 지표·VIX·공포탐욕 모두 자동 수집(거시는 수동 조정 가능).<br>
     투자 자문이 아니며, 매매 판단과 결과의 책임은 사용자에게 있습니다.
   </footer>
 </div>
@@ -759,9 +763,36 @@ document.querySelectorAll('#toggles button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#osc-tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#osc-tabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.osc=b.dataset.o;renderOsc();});
+state.macroAuto={vix:null,fng:null};      // 마지막 자동 수집값
+state.macroManual={vix:false,fng:false};  // 수동 조정 여부
+function setMacroAuto(key,val){            // 시장심리에서 호출
+  state.macroAuto[key]=val;
+  document.getElementById(key+'Auto').textContent=val;
+  if(!state.macroManual[key]){             // 수동 조정 중이 아니면 자동 반영
+    state.macro[key]=val;
+    document.getElementById(key).value=val;
+    document.getElementById(key+'v').textContent=val;
+    decide();
+  }
+}
+function revertMacro(key){
+  if(state.macroAuto[key]==null)return;
+  state.macroManual[key]=false;
+  document.getElementById(key+'Tag').style.display='none';
+  state.macro[key]=state.macroAuto[key];
+  document.getElementById(key).value=state.macroAuto[key];
+  document.getElementById(key+'v').textContent=state.macroAuto[key];
+  decide();
+}
 [['vix','vixv'],['fng','fngv']].forEach(p=>{
-  const el=document.getElementById(p[0]);el.oninput=()=>{state.macro[p[0]]=parseFloat(el.value);
-    document.getElementById(p[1]).textContent=el.value;decide();};});
+  const el=document.getElementById(p[0]);el.oninput=()=>{
+    state.macro[p[0]]=parseFloat(el.value);
+    document.getElementById(p[1]).textContent=el.value;
+    state.macroManual[p[0]]=true;          // 손대면 수동 모드
+    document.getElementById(p[0]+'Tag').style.display=state.macroAuto[p[0]]!=null?'inline':'none';
+    decide();};});
+document.getElementById('vixRev').onclick=()=>revertMacro('vix');
+document.getElementById('fngRev').onclick=()=>revertMacro('fng');
 /* ---------- 설정 (임계값) ---------- */
 function renderSettings(){document.querySelectorAll('[data-set]').forEach(inp=>{inp.value=state.settings[inp.dataset.set];});}
 document.querySelectorAll('[data-set]').forEach(inp=>inp.addEventListener('change',()=>{
@@ -859,9 +890,9 @@ async function fetchSentiment(){
     set('cFng',d.fng); set('cFngR',d.fng_rating||'공포·탐욕');
     set('cPc',d.putcall&&d.putcall.score!=null?d.putcall.score:'—');
     set('cVix',d.vix_raw!=null?d.vix_raw:(d.vix_comp&&d.vix_comp.score!=null?d.vix_comp.score:'—'));
-    // 거시 패널 자동 입력
-    if(d.fng!=null){state.macro.fng=d.fng;document.getElementById('fng').value=d.fng;document.getElementById('fngv').textContent=d.fng;}
-    if(d.vix_raw!=null){state.macro.vix=d.vix_raw;document.getElementById('vix').value=d.vix_raw;document.getElementById('vixv').textContent=d.vix_raw;}
+    // 거시 패널 자동 입력 (수동 조정 중이 아니면 반영)
+    if(d.fng!=null)setMacroAuto('fng',d.fng);
+    if(d.vix_raw!=null)setMacroAuto('vix',Math.round(d.vix_raw*10)/10);
     decide();
     note.innerHTML='CNN 갱신 완료 · 공포탐욕 자동 입력됨'+(d.vix_raw!=null?' · VIX 자동':' · VIX는 수동(원시값 미제공)')+'. 풋콜/VIX는 CNN 정규화 점수(0~100)입니다.';
   }catch(e){
