@@ -304,8 +304,8 @@
   .ticktape::before{content:'신호';position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;
     padding:0 11px;background:var(--panel2);color:var(--faint);font-family:var(--mono);font-size:10px;
     border-right:1px solid var(--border);z-index:2}
-  .tapeinner{display:flex;gap:26px;white-space:nowrap;will-change:transform;
-    animation:tape 38s linear infinite}
+  .tapeinner{display:flex;white-space:nowrap;will-change:transform;animation:tape 38s linear infinite}
+  .tapeseq{display:flex;gap:26px;padding-right:26px;flex:none}
   .ticktape:hover .tapeinner{animation-play-state:paused}
   .tapeinner .ti{font-family:var(--mono);font-size:11.5px;display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
   .tapeinner .ti b{font-weight:700}
@@ -1143,7 +1143,7 @@ function renderFngBlock(d){
   // 7 INDICATORS (점수 막대만)
   const box=document.getElementById('fngIndicators');
   box.innerHTML=(d.indicators||[]).map(it=>{
-    const col=fngColor(it.score);
+    const col=fngBadgeColor(it.score);
     return "<div class='find'><div class='find-top'><span class='find-nm'>"+it.name+"</span>"
       +"<span class='find-sc' style='color:"+col+"'>"+(it.score==null?'—':Math.round(it.score))+" · "+rateKo(it.rating)+"</span></div>"
       +"<div class='find-desc'>"+it.desc+"</div>"
@@ -1658,10 +1658,11 @@ function renderFlagTicker(){
   const flags=fl.length?fl.map(x=>"<span class='ti "+x[0]+"'><span class='dot'></span><b>"+x[1]+"</b> "+x[2].replace(/<[^>]+>/g,'')+"</span>")
     :(soon.length?[]:["<span class='ti info'><span class='dot'></span>감지된 리스크 없음 — 신호 정렬 양호</span>"]);
   const items=soon.concat(flags);
-  // 끊김 없는 무한 스크롤 위해 2벌 복제. 내용 동일하면 다시 그리지 않음(애니메이션 리셋 방지)
-  const html=items.concat(items).join('');
-  if(inner.dataset.html===html)return;
-  inner.dataset.html=html; inner.innerHTML=html;
+  // 콘텐츠 1벌을 블록으로 감싸 2개 배치 → -50% 이동 시 픽셀단위로 완벽히 이어짐(gap 불일치 없음)
+  const seq=items.join('');
+  if(inner.dataset.seq===seq)return;
+  inner.dataset.seq=seq;
+  inner.innerHTML="<div class='tapeseq'>"+seq+"</div><div class='tapeseq'>"+seq+"</div>";
 }
 async function loadMktTape(){
   const inner=document.getElementById('mktTapeInner'); if(!inner)return;
@@ -1676,8 +1677,9 @@ async function loadMktTape(){
       return "<span class='mkti'><span class='mlab'>"+t.label+"</span> "+(t.unit||'')+fmt(t.price)
         +" <span class='mpct "+cls+"'>"+arr+Math.abs(t.pct).toFixed(2)+"%</span></span>";
     });
-    const html=items.concat(items).join('');
-    if(inner.dataset.html!==html){inner.dataset.html=html; inner.innerHTML=html;}
+    const seq=items.join('');
+    if(inner.dataset.seq!==seq){inner.dataset.seq=seq;
+      inner.innerHTML="<div class='tapeseq'>"+seq+"</div><div class='tapeseq'>"+seq+"</div>";}
   }catch(e){document.getElementById('mktTape').style.display='none';}
 }
 function renderCrosses(list){
