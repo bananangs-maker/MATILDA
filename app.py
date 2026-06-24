@@ -69,8 +69,9 @@ def index():
 @app.route("/chart/<ticker>")
 def chart(ticker):
     ticker = ticker.upper()
-    if ticker not in ("TQQQ", "SOXL"):
-        return jsonify({"error": f"지원하지 않는 종목: {ticker}"}), 400
+    from public_data import valid_ticker
+    if not valid_ticker(ticker):
+        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
     try:
         df, source = _load(ticker)
         payload = compute_series(df)
@@ -103,8 +104,9 @@ def chart(ticker):
 @app.route("/backtest/<ticker>")
 def backtest_route(ticker):
     ticker = ticker.upper()
-    if ticker not in ("TQQQ", "SOXL"):
-        return jsonify({"error": f"지원하지 않는 종목: {ticker}"}), 400
+    from public_data import valid_ticker
+    if not valid_ticker(ticker):
+        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
     from flask import request
     try:
         trend_ma = int(request.args.get("trend_ma", 200))
@@ -121,6 +123,48 @@ def backtest_route(ticker):
         return jsonify({"error": str(e), "ticker": ticker}), 500
 
 
+@app.route("/search")
+def search_route():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 1:
+        return jsonify({"results": []})
+    if USE_MOCK:
+        demo = [{"symbol": "AAPL", "name": "Apple Inc", "exchange": "NASDAQ", "type": "주식"},
+                {"symbol": "NVDA", "name": "NVIDIA Corp", "exchange": "NASDAQ", "type": "주식"},
+                {"symbol": "SPY", "name": "SPDR S&P 500 ETF", "exchange": "NYSE", "type": "ETF"}]
+        ql = q.upper()
+        return jsonify({"results": [d for d in demo if ql in d["symbol"] or ql in d["name"].upper()]})
+    try:
+        from public_data import symbol_search
+        return jsonify({"results": symbol_search(q)})
+    except Exception as e:
+        return jsonify({"results": [], "error": str(e)})
+
+
+@app.route("/watchlist", methods=["GET", "POST"])
+def watchlist():
+    if not _supa_enabled():
+        return jsonify({"configured": False, "tickers": []})
+    import requests as rq
+    headers = {"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}",
+               "Content-Type": "application/json"}
+    base = f"{SUPA_URL}/rest/v1/watchlist"
+    try:
+        if request.method == "GET":
+            r = rq.get(base, params={"id": "eq.me", "select": "tickers"}, headers=headers, timeout=10)
+            r.raise_for_status()
+            rows = r.json()
+            return jsonify({"configured": True, "tickers": rows[0]["tickers"] if rows else []})
+        body = request.get_json(force=True) or {}
+        payload = [{"id": "me", "tickers": body.get("tickers", [])}]
+        r = rq.post(base, json=payload,
+                    headers={**headers, "Prefer": "resolution=merge-duplicates"}, timeout=10)
+        r.raise_for_status()
+        return jsonify({"configured": True, "ok": True})
+    except Exception as e:
+        return jsonify({"configured": True, "error": str(e)}), 500
+
+
 @app.route("/sentiment")
 def sentiment_route():
     try:
@@ -133,8 +177,9 @@ def sentiment_route():
 @app.route("/validate/<ticker>")
 def validate_route(ticker):
     ticker = ticker.upper()
-    if ticker not in ("TQQQ", "SOXL"):
-        return jsonify({"error": f"지원하지 않는 종목: {ticker}"}), 400
+    from public_data import valid_ticker
+    if not valid_ticker(ticker):
+        return jsonify({"error": f"잘못된 티커: {ticker}"}), 400
     try:
         cost = float(request.args.get("cost", 5))
     except ValueError:

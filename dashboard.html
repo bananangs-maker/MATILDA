@@ -197,6 +197,24 @@
   .sumrow .sg{font-family:var(--mono);font-weight:700;width:36px;text-align:right}
   .sg.buy{color:var(--go)} .sg.sell{color:var(--stop)} .sg.neutral{color:var(--muted)}
   @media(max-width:720px){.gauges{grid-template-columns:1fr}.sumtabs{grid-template-columns:1fr}}
+  .wt{position:relative;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--muted);
+    background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:6px 11px;cursor:pointer;transition:.12s}
+  .wt.on{color:#0a0e14;background:var(--steel);border-color:var(--steel)}
+  .wt .wx{font-style:normal;margin-left:6px;opacity:.55;font-size:13px}
+  .wt .wx:hover{opacity:1;color:var(--stop)}
+  .searchwrap{position:relative}
+  #searchInput{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--panel2);
+    border:1px solid var(--border);border-radius:8px;padding:7px 11px;width:200px;outline:none}
+  #searchInput:focus{border-color:var(--steel)}
+  .searchres{position:absolute;top:38px;left:0;width:320px;max-height:320px;overflow:auto;z-index:50;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;display:none;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+  .searchres.show{display:block}
+  .searchres .sr{padding:9px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--panel2);display:flex;align-items:center;gap:7px}
+  .searchres .sr:hover{background:var(--panel2)}
+  .searchres .sr b{font-family:var(--mono);color:var(--ink)}
+  .searchres .sr span{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .searchres .sr i{font-style:normal;font-size:10px;color:var(--faint);white-space:nowrap}
+  .searchres .sempty{padding:10px 12px;color:var(--faint);font-size:11.5px;font-family:var(--mono)}
   footer{margin-top:24px;color:var(--faint);font-size:11px;text-align:center;line-height:1.6}
 </style>
 </head>
@@ -204,7 +222,11 @@
 <div class="wrap">
   <div class="bar">
     <div class="brand" id="brand"><span id="brandLogo" style="display:inline-block;width:22px;height:22px;vertical-align:-4px;margin-right:8px"></span>MATILDA<span class="last" id="lastpx"></span></div>
-    <div class="grp" id="ticker"><button class="on" data-t="TQQQ">TQQQ</button><button data-t="SOXL">SOXL</button></div>
+    <div class="grp" id="ticker"></div>
+    <div class="searchwrap">
+      <input id="searchInput" placeholder="＋ 종목 검색 (예: AAPL, SPY)" autocomplete="off" spellcheck="false">
+      <div class="searchres" id="searchResults"></div>
+    </div>
     <div class="grp tf" id="tf">
       <button data-r="3M">3M</button><button data-r="6M">6M</button>
       <button class="on" data-r="1Y">1Y</button><button data-r="2Y">2Y</button>
@@ -415,6 +437,7 @@ const state={ticker:'TQQQ',range:'1Y',osc:'rsi',
   settings:Object.assign({},SET_DEFAULTS,loadLS('matilda_settings',{})),
   fib:{lines:[]},
   drawMode:'cursor', draw:{items:[],sel:null,draft:null},
+  watchlist:['TQQQ','SOXL'],
   journal:loadLS('matilda_journal',[])};
 let priceChart,oscChart,candle,vol,S={},oscSeries={},syncing=false;
 let btChart=null,btSeries=null;
@@ -614,9 +637,59 @@ function decide(){
   const box=document.getElementById('flags');
   box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 리스크 없음 — 신호 정렬 양호</div>';
 }
-document.querySelectorAll('#ticker button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#ticker button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');state.ticker=b.dataset.t;load();});
+/* ---------- 관심종목 + 종목 검색 ---------- */
+const PINNED=['TQQQ','SOXL'];
+function renderTickers(){
+  const box=document.getElementById('ticker');
+  box.innerHTML=state.watchlist.map(t=>{
+    const on=t===state.ticker?' on':'';
+    const x=PINNED.includes(t)?'':"<i class='wx' data-x='"+t+"'>×</i>";
+    return "<button class='wt"+on+"' data-t='"+t+"'>"+t+x+"</button>";
+  }).join('');
+  box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=e=>{
+    if(e.target.classList.contains('wx')){removeTicker(e.target.dataset.x);return;}
+    setTicker(b.dataset.t);
+  });
+}
+function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); }
+function addTicker(t){ t=t.toUpperCase(); if(!state.watchlist.includes(t)){state.watchlist.push(t);saveWatchlist();} renderTickers(); }
+function removeTicker(t){
+  if(PINNED.includes(t))return;
+  state.watchlist=state.watchlist.filter(x=>x!==t); saveWatchlist();
+  if(state.ticker===t){state.ticker=state.watchlist[0]||'TQQQ';clearFib();load();}
+  renderTickers();
+}
+async function saveWatchlist(){
+  saveLS('matilda_watchlist',state.watchlist);
+  try{await fetch('/watchlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tickers:state.watchlist})});}catch(e){}
+}
+async function loadWatchlist(){
+  let wl=loadLS('matilda_watchlist',PINNED.slice());
+  try{const r=await (await fetch('/watchlist')).json();
+    if(r.configured&&Array.isArray(r.tickers)&&r.tickers.length)wl=r.tickers;}catch(e){}
+  PINNED.forEach(p=>{if(!wl.includes(p))wl.unshift(p);});
+  state.watchlist=wl; renderTickers();
+}
+let searchTimer=null;
+const sInput=document.getElementById('searchInput'), sRes=document.getElementById('searchResults');
+sInput.addEventListener('input',()=>{
+  const q=sInput.value.trim(); clearTimeout(searchTimer);
+  if(q.length<1){sRes.innerHTML='';sRes.classList.remove('show');return;}
+  searchTimer=setTimeout(async()=>{
+    try{
+      const d=await (await fetch('/search?q='+encodeURIComponent(q))).json();
+      const rs=d.results||[];
+      if(!rs.length){sRes.innerHTML="<div class='sempty'>"+(d.error?'검색 불가(키 확인)':'결과 없음')+"</div>";}
+      else sRes.innerHTML=rs.map(r=>"<div class='sr' data-sym='"+r.symbol+"'><b>"+r.symbol+"</b> <span>"+r.name+"</span> <i>"+r.type+" · "+r.exchange+"</i></div>").join('');
+      sRes.classList.add('show');
+      sRes.querySelectorAll('.sr').forEach(el=>el.onclick=()=>{
+        const sym=el.dataset.sym; addTicker(sym); setTicker(sym);
+        sInput.value='';sRes.innerHTML='';sRes.classList.remove('show');});
+    }catch(e){sRes.innerHTML="<div class='sempty'>검색 오류</div>";sRes.classList.add('show');}
+  },350);
+});
+document.addEventListener('click',e=>{if(!e.target.closest('.searchwrap')){sRes.classList.remove('show');}});
+
 document.querySelectorAll('#tf button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tf button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.range=b.dataset.r;applyTimeframe();});
@@ -658,7 +731,6 @@ function fibAuto(){
 document.getElementById('fibAuto').onclick=fibAuto;
 document.getElementById('fibClear').onclick=()=>{document.getElementById('fibHi').value='';document.getElementById('fibLo').value='';clearFib();};
 ['fibHi','fibLo'].forEach(id=>document.getElementById(id).addEventListener('change',drawFib));
-document.querySelectorAll('#ticker button').forEach(b=>b.addEventListener('click',clearFib));
 
 /* ---------- 매매 일지 (localStorage + CSV) ---------- */
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -1157,7 +1229,7 @@ function setFavicon(){
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 setFavicon();
 document.getElementById('brandLogo').innerHTML=faceSVG(1);
-if(makeCharts()){setupOverlay();load();fetchSentiment();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();fetchSentiment();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>

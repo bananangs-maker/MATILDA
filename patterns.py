@@ -46,8 +46,9 @@ def detect_ma_cross(df: pd.DataFrame, lookback: int = 25):
         # 200일선 추세와 정렬?
         aligned = True
         if not np.isnan(sma200.iloc[cross_idx]):
-            up_regime = close.iloc[cross_idx] > sma200.iloc[cross_idx]
+            up_regime = bool(close.iloc[cross_idx] > sma200.iloc[cross_idx])
             aligned = (kind == "golden" and up_regime) or (kind == "dead" and not up_regime)
+        aligned = bool(aligned)
         base_conf = {1: 80, 2: 65, 3: 50}[tier]
         conf = base_conf + (8 if aligned else -15) - min(bars_ago, 12)
         conf = max(20, min(95, conf))

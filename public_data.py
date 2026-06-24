@@ -10,12 +10,18 @@ Twelve Data 무료 키: https://twelvedata.com 가입 후 발급 (800회/일).
 """
 import os
 import io
+import re
 import requests
 import pandas as pd
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
-SUPPORTED = ("TQQQ", "SOXL")
+PINNED = ("TQQQ", "SOXL")          # 기본 고정 종목
+TICKER_RE = re.compile(r"^[A-Z][A-Z.\-]{0,7}$")
+
+
+def valid_ticker(t: str) -> bool:
+    return bool(TICKER_RE.match((t or "").upper()))
 
 
 def _parse_twelvedata(j: dict) -> pd.DataFrame:
@@ -61,8 +67,8 @@ def _from_stooq(ticker: str) -> pd.DataFrame:
 
 def daily_ohlcv(ticker: str, yrange: str = "2y") -> tuple[pd.DataFrame, str]:
     ticker = ticker.upper()
-    if ticker not in SUPPORTED:
-        raise ValueError(f"지원하지 않는 종목: {ticker}")
+    if not valid_ticker(ticker):
+        raise ValueError(f"잘못된 티커 형식: {ticker}")
     errors = []
     for name, fn in (("Twelve Data", lambda: _from_twelvedata(ticker, 500)),
                      ("Stooq", lambda: _from_stooq(ticker))):
@@ -74,6 +80,34 @@ def daily_ohlcv(ticker: str, yrange: str = "2y") -> tuple[pd.DataFrame, str]:
         except Exception as e:
             errors.append(f"{name}: {e}")
     raise RuntimeError("공개 소스 실패 — " + " / ".join(errors))
+
+
+def symbol_search(query: str, limit: int = 12) -> list:
+    """미국 주식·ETF 종목 검색 (Twelve Data symbol_search)."""
+    key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("TWELVEDATA_API_KEY 미설정")
+    r = requests.get("https://api.twelvedata.com/symbol_search",
+                     params={"symbol": query, "outputsize": 30, "apikey": key},
+                     headers=UA, timeout=10)
+    r.raise_for_status()
+    data = (r.json() or {}).get("data", []) or []
+    out, seen = [], set()
+    for d in data:
+        if d.get("country") != "United States":
+            continue
+        typ = (d.get("instrument_type") or d.get("type") or "")
+        if not any(k in typ for k in ("Common Stock", "ETF", "Stock")):
+            continue
+        sym = (d.get("symbol") or "").upper()
+        if not valid_ticker(sym) or sym in seen:
+            continue
+        seen.add(sym)
+        out.append({"symbol": sym, "name": d.get("instrument_name", ""),
+                    "exchange": d.get("exchange", ""), "type": "ETF" if "ETF" in typ else "주식"})
+        if len(out) >= limit:
+            break
+    return out
 
 
 if __name__ == "__main__":
