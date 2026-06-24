@@ -278,8 +278,11 @@
   .tapeinner .dot{width:5px;height:5px;border-radius:50%}
   .ti.danger .dot{background:var(--stop)} .ti.warn .dot{background:var(--caution)} .ti.info .dot{background:var(--steel)}
   @keyframes tape{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-  .fng-ov{margin-bottom:10px}
-  .fng-ov .fcmps{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;margin-top:8px}
+  .fng-ov{margin-bottom:12px}
+  .fng-ov #fngGaugeBox{max-width:200px;margin:0 auto}
+  .fng-score{text-align:center;font-family:var(--disp);font-weight:700;font-size:30px;line-height:1;margin-top:-8px}
+  .fng-word{display:block;font-size:12px;font-weight:600;margin-top:3px}
+  .fng-ov .fcmps{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-top:14px}
   .fcmp{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .fcmp-txt{display:flex;flex-direction:column;line-height:1.25}
   .fcmp-l{font-size:10px;color:var(--faint)}
@@ -997,23 +1000,26 @@ async function loadFngFull(){
 }
 function renderFngBlock(d){
   const ov=d.overview||{};
+  const sc=ov.score==null?50:ov.score;
   document.getElementById('fngOvRating').textContent=rateKo(ov.rating);
-  document.getElementById('fngOvRating').style.color=fngColor(ov.score);
-  // OVERVIEW: 반원 게이지 + 과거 비교 뱃지
+  document.getElementById('fngOvRating').style.color=fngColor(sc);
   const word=v=>v==null?'—':(v>=75?'극단탐욕':v>=55?'탐욕':v>=45?'중립':v>=25?'공포':'극단공포');
   const badge=(lab,v)=>{const col=v!=null?fngColor(v):'var(--faint)';
     return "<div class='fcmp'><div class='fcmp-txt'><span class='fcmp-l'>"+lab+"</span><span class='fcmp-w' style='color:"+col+"'>"+word(v)+"</span></div>"
       +"<span class='fcmp-badge' style='border-color:"+col+";color:"+col+"'>"+(v==null?'—':Math.round(v))+"</span></div>";};
+  // OVERVIEW: 기술요약과 동일한 게이지 컴포넌트 재사용
   document.getElementById('fngOverview').innerHTML=
-    fngGaugeSVG(ov.score==null?50:ov.score)
+    "<div class='gbox' id='fngGaugeBox'></div>"
+    +"<div class='fng-score' style='color:"+fngColor(sc)+"'>"+Math.round(sc)+"<span class='fng-word'>"+rateKo(ov.rating)+"</span></div>"
     +"<div class='fcmps'>"+badge('전일',ov.prev_close)+badge('1주 전',ov.prev_week)+badge('1달 전',ov.prev_month)+badge('1년 전',ov.prev_year)+"</div>";
-  // TIMELINE 라인 차트
+  renderGauge('fngGaugeBox',(sc-50)/50);   // 호버 시 바늘 스윕 애니메이션 동일 적용
+  // TIMELINE
   const tl=d.timeline||[];
   if(tl.length){
     document.getElementById('fngTlNow').textContent=tl[0].time+' ~ 현재';
     document.getElementById('fngTimeline').innerHTML=fngTimelineSVG(tl);
   }
-  // 7 INDICATORS (스파크라인 제거 — 점수 막대만)
+  // 7 INDICATORS (점수 막대만)
   const box=document.getElementById('fngIndicators');
   box.innerHTML=(d.indicators||[]).map(it=>{
     const col=fngColor(it.score);
@@ -1024,40 +1030,24 @@ function renderFngBlock(d){
       +"</div>";
   }).join('');
 }
-function fngGaugeSVG(score){
-  const W=280,H=176,cx=140,cy=140,r=112,rw=22;
-  const zones=[[0,25,'#E0453A','극단공포'],[25,45,'#E08B4D','공포'],[45,55,'#C9A23A','중립'],[55,75,'#7DBE5C','탐욕'],[75,100,'#26C281','극단탐욕']];
-  const A=v=>(180-1.8*v)*Math.PI/180;
-  const px=(v,rr)=>cx+rr*Math.cos(A(v)), py=(v,rr)=>cy-rr*Math.sin(A(v));
-  let svg="<svg viewBox='0 0 "+W+" "+H+"' style='width:100%;height:auto;max-width:300px;display:block;margin:0 auto'>";
-  zones.forEach(z=>{const x1=px(z[0],r),y1=py(z[0],r),x2=px(z[1],r),y2=py(z[1],r);
-    svg+="<path d='M "+x1.toFixed(1)+" "+y1.toFixed(1)+" A "+r+" "+r+" 0 0 1 "+x2.toFixed(1)+" "+y2.toFixed(1)+"' fill='none' stroke='"+z[2]+"' stroke-width='"+rw+"' stroke-linecap='butt'/>";});
-  [0,25,50,75,100].forEach(v=>{const rr=r-rw-7;svg+="<text x='"+px(v,rr).toFixed(1)+"' y='"+(py(v,rr)+3).toFixed(1)+"' fill='var(--faint)' font-size='9' text-anchor='middle' font-family='monospace'>"+v+"</text>";});
-  zones.forEach(z=>{const mid=(z[0]+z[1])/2,rr=r+11;svg+="<text x='"+px(mid,rr).toFixed(1)+"' y='"+py(mid,rr).toFixed(1)+"' fill='var(--muted)' font-size='8' text-anchor='middle'>"+z[3]+"</text>";});
-  const nx=px(score,r-8),ny=py(score,r-8);
-  svg+="<line x1='"+cx+"' y1='"+cy+"' x2='"+nx.toFixed(1)+"' y2='"+ny.toFixed(1)+"' stroke='var(--ink)' stroke-width='3.2' stroke-linecap='round'/>";
-  svg+="<circle cx='"+cx+"' cy='"+cy+"' r='6' fill='var(--ink)'/>";
-  svg+="<text x='"+cx+"' y='"+(cy+30)+"' fill='var(--ink)' font-size='30' font-weight='700' text-anchor='middle' font-family=\"'Space Grotesk',sans-serif\">"+Math.round(score)+"</text>";
-  svg+="</svg>";
-  return svg;
-}
 function fngTimelineSVG(s){
-  const W=300,H=132,padL=4,padR=22,padT=8,padB=18,n=s.length;
+  // viewBox를 넓게 잡아 텍스트가 다른 차트와 동일하게 작게 스케일되도록
+  const W=620,H=250,padL=6,padR=40,padT=14,padB=30,n=s.length;
   const X=i=>padL+(n<2?0:i/(n-1))*(W-padL-padR), Y=v=>padT+(1-v/100)*(H-padT-padB);
   const monLab=t=>{const y=t.slice(0,4),mo=+t.slice(5,7),nm={1:'1월',4:'4월',7:'7월',10:'10월'};return (mo===1?"'"+y.slice(2)+' ':'')+(nm[mo]||'');};
   let svg="<svg viewBox='0 0 "+W+" "+H+"' style='width:100%;height:auto'>";
   [0,25,50,75,100].forEach(v=>{const y=Y(v),ref=(v===25||v===75);
-    svg+="<line x1='"+padL+"' y1='"+y+"' x2='"+(W-padR)+"' y2='"+y+"' stroke='"+(ref?'#3a4658':C.grid)+"' stroke-width='.6'"+(ref?" stroke-dasharray='4 3'":"")+"/>";
-    svg+="<text x='"+(W-padR+3)+"' y='"+(y+3)+"' fill='var(--faint)' font-size='8' font-family='monospace'>"+v+"</text>";});
-  svg+="<text x='"+(padL+2)+"' y='"+(Y(75)-3)+"' fill='"+C.up+"' font-size='7.5'>Extreme Greed</text>";
-  svg+="<text x='"+(padL+2)+"' y='"+(Y(25)+9)+"' fill='"+C.down+"' font-size='7.5'>Extreme Fear</text>";
+    svg+="<line x1='"+padL+"' y1='"+y+"' x2='"+(W-padR)+"' y2='"+y+"' stroke='"+(ref?'#3a4658':C.grid)+"' stroke-width='1'"+(ref?" stroke-dasharray='6 4'":"")+"/>";
+    svg+="<text x='"+(W-padR+6)+"' y='"+(y+4)+"' fill='var(--faint)' font-size='13' font-family='monospace'>"+v+"</text>";});
+  svg+="<text x='"+(padL+3)+"' y='"+(Y(75)-5)+"' fill='"+C.up+"' font-size='12'>Extreme Greed</text>";
+  svg+="<text x='"+(padL+3)+"' y='"+(Y(25)+14)+"' fill='"+C.down+"' font-size='12'>Extreme Fear</text>";
   let lastM=null;
   s.forEach((p,i)=>{const mo=+p.time.slice(5,7),mk=p.time.slice(0,7);
     if(mk!==lastM&&[1,4,7,10].includes(mo)){lastM=mk;
-      svg+="<line x1='"+X(i).toFixed(1)+"' y1='"+padT+"' x2='"+X(i).toFixed(1)+"' y2='"+(H-padB)+"' stroke='"+C.grid+"' stroke-width='.5' opacity='.5'/>";
-      svg+="<text x='"+X(i).toFixed(1)+"' y='"+(H-5)+"' fill='var(--faint)' font-size='8' text-anchor='middle' font-family='monospace'>"+monLab(p.time)+"</text>";}});
+      svg+="<line x1='"+X(i).toFixed(1)+"' y1='"+padT+"' x2='"+X(i).toFixed(1)+"' y2='"+(H-padB)+"' stroke='"+C.grid+"' stroke-width='.8' opacity='.5'/>";
+      svg+="<text x='"+X(i).toFixed(1)+"' y='"+(H-9)+"' fill='var(--faint)' font-size='13' text-anchor='middle' font-family='monospace'>"+monLab(p.time)+"</text>";}});
   const path=s.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.value).toFixed(1)).join(' ');
-  svg+="<path d='"+path+"' fill='none' stroke='"+C.steel+"' stroke-width='1.3' stroke-linejoin='round'/>";
+  svg+="<path d='"+path+"' fill='none' stroke='"+C.steel+"' stroke-width='2' stroke-linejoin='round'/>";
   svg+="</svg>";
   return svg;
 }
