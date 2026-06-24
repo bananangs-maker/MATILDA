@@ -157,7 +157,7 @@
 <body>
 <div class="wrap">
   <div class="bar">
-    <div class="brand" id="brand">MATILDA<span class="last" id="lastpx"></span></div>
+    <div class="brand" id="brand"><span id="brandLogo" style="display:inline-block;width:22px;height:22px;vertical-align:-4px;margin-right:8px"></span>MATILDA<span class="last" id="lastpx"></span></div>
     <div class="grp" id="ticker"><button class="on" data-t="TQQQ">TQQQ</button><button data-t="SOXL">SOXL</button></div>
     <div class="grp tf" id="tf">
       <button data-r="3M">3M</button><button data-r="6M">6M</button>
@@ -806,35 +806,37 @@ document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
   selectTool(m);
 });
 
-/* ---------- 오리지널 마스코트: 파란 양갈래 소녀 (표정/밝기 = 진입 비중) ---------- */
+/* ---------- 로고: 일본 문장(家紋) 스타일 매화 꽃 문양 — 레드. m=진입 비중(0~1) → 밝기 ---------- */
 function faceSVG(m){
   m=Math.max(0,Math.min(1,m));
-  const hair='#6AA9FF', hairD='#3F77CC', skin='#F4CDA6', eye='#2A3340', cheek='#FF7E8E';
-  const bright=(0.55+m*0.45).toFixed(2);
-  const ch=(0.2+m*0.6).toFixed(2);
-  const amp=(m-0.5)*12;                          // +면 미소, -면 시무룩
-  const mouth='M27 38 Q32 '+(38+amp)+' 37 38';
-  return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 60' style='width:100%;height:100%'>"
-    +"<g opacity='"+bright+"'>"
-    +"<ellipse cx='12' cy='34' rx='7' ry='12' fill='"+hair+"'/><ellipse cx='52' cy='34' rx='7' ry='12' fill='"+hair+"'/>"
-    +"<circle cx='18' cy='27' r='3' fill='"+hairD+"'/><circle cx='46' cy='27' r='3' fill='"+hairD+"'/>"
-    +"<circle cx='32' cy='31' r='14' fill='"+skin+"'/>"
-    +"<path d='M18 28 Q19 13 32 12 Q45 13 46 28 Q40 21 32 22 Q24 21 18 28 Z' fill='"+hair+"'/>"
-    +"<circle cx='27' cy='31' r='2.4' fill='"+eye+"'/><circle cx='37' cy='31' r='2.4' fill='"+eye+"'/>"
-    +"<circle cx='23' cy='36' r='2.6' fill='"+cheek+"' opacity='"+ch+"'/>"
-    +"<circle cx='41' cy='36' r='2.6' fill='"+cheek+"' opacity='"+ch+"'/>"
-    +"<path d='"+mouth+"' stroke='#C8506A' stroke-width='2.4' fill='none' stroke-linecap='round'/>"
+  const red='#E0322B', cx=32, cy=32, R=12.5, pr=9;
+  const op=(0.45+0.55*m).toFixed(2);
+  let petals='', stamens='';
+  for(let i=0;i<5;i++){
+    const a=(-90+i*72)*Math.PI/180;
+    petals+="<circle cx='"+(cx+R*Math.cos(a)).toFixed(1)+"' cy='"+(cy+R*Math.sin(a)).toFixed(1)+"' r='"+pr+"' fill='"+red+"'/>";
+    stamens+="<line x1='"+(cx+3.2*Math.cos(a)).toFixed(1)+"' y1='"+(cy+3.2*Math.sin(a)).toFixed(1)
+      +"' x2='"+(cx+7*Math.cos(a)).toFixed(1)+"' y2='"+(cy+7*Math.sin(a)).toFixed(1)
+      +"' stroke='#fff' stroke-width='1.5' stroke-linecap='round'/>";
+  }
+  return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' style='width:100%;height:100%'>"
+    +"<g opacity='"+op+"'>"
+    +"<circle cx='32' cy='32' r='30' fill='none' stroke='"+red+"' stroke-width='2.4'/>"
+    +petals
+    +"<circle cx='32' cy='32' r='6' fill='"+red+"'/>"
+    +stamens
     +"</g></svg>";
 }
 function setFavicon(){
   let l=document.querySelector("link[rel='icon']");
   if(!l){l=document.createElement('link');l.rel='icon';document.head.appendChild(l);}
   l.type='image/svg+xml';
-  l.href='data:image/svg+xml,'+encodeURIComponent(faceSVG(0.85));
+  l.href='data:image/svg+xml,'+encodeURIComponent(faceSVG(1));
 }
 
 /* ---------- 차트 초기화 (반드시 마지막) ---------- */
 setFavicon();
+document.getElementById('brandLogo').innerHTML=faceSVG(1);
 if(makeCharts()){setupOverlay();load();fetchSentiment();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
