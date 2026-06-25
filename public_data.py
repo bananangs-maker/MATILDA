@@ -197,7 +197,12 @@ def daily_ohlcv(ticker: str, yrange: str = "3y", interval: str = "1day") -> tupl
     sources = [("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
                ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
     if interval == "1day":
-        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 마지막 폴백(일봉만, 전체 히스토리)
+        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 일봉만, 전체 히스토리
+        if yrange == "max":
+            # 전체 히스토리가 필요할 땐 Stooq를 우선(Twelve Data는 5000봉≈2006에서 잘림 → 2000 누락).
+            sources = [("Stooq", lambda: _from_stooq(ticker)),
+                       ("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
+                       ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
     for name, fn in sources:
         try:
             df = fn()
