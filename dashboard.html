@@ -67,6 +67,19 @@
   .ep-calc{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:var(--muted)}
   .ep-calc input{background:var(--panel2);border:1px solid var(--border);color:var(--ink);border-radius:3px;padding:4px 7px;font-family:var(--mono)}
   .card.exitplan{border-color:var(--accent)}
+  .enginerow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start}
+  .topband2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start}
+  @media(max-width:900px){.enginerow,.topband2{grid-template-columns:1fr}}
+  .eng-panel{border:1.5px solid var(--border)}
+  @keyframes engPos{50%{border-color:#2bd07a}}
+  @keyframes engNeg{50%{border-color:#ff3b46}}
+  .eng-panel.pos{animation:engPos 1.5s ease-in-out infinite;border-color:#2bd07a}
+  .eng-panel.neg{animation:engNeg 1.5s ease-in-out infinite;border-color:#ff3b46}
+  .eng200-status{font-size:18px;font-weight:700;margin:6px 0 2px}
+  .eng200-sub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
+  .eng200-row{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted)}
+  .eng200-row b{font-family:var(--mono);color:var(--ink)}
+  .eng200-entry{margin-top:8px;padding:7px 10px;border-radius:3px;font-size:12px;font-weight:600}
   #deckmason{margin-top:12px}
   .topband{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:start;margin-bottom:10px}
   @media(max-width:900px){.topband{grid-template-columns:1fr}}
@@ -430,9 +443,9 @@
     </div>
   </div>
   <div id="deckmason">
-    <div class="topband">
-      <div class="card final">
-        <div class="lab">최종 판정</div>
+    <div class="enginerow">
+      <div class="card final eng-panel" id="engClassic">
+        <div class="lab">20-parameter engine <span class="hint">기존 사이징 엔진 · 방어 강점/수익 약점(참고용)</span></div>
         <div style="display:flex;align-items:center;gap:13px">
           <div id="faceBox" style="width:56px;height:54px;flex:none"></div>
           <div style="flex:1;min-width:0">
@@ -446,8 +459,14 @@
         <div class="macrostat" id="macroStat"></div>
         <div class="eng-metrics" id="engMetrics"></div>
       </div>
+      <div class="card eng-panel" id="eng200">
+        <div class="lab">200MA engine <span class="hint">검증된 코어 · 200선 홀딩/현금 + 과열 익절</span></div>
+        <div id="eng200Body"><div class="none">차트 로딩 후 표시됩니다</div></div>
+      </div>
+    </div>
+    <div class="topband2">
       <div class="card">
-        <div class="lab">리스크 티어 <span class="hint">엔진 판정 분해</span></div>
+        <div class="lab">리스크 티어 <span class="hint">20-parameter engine 판정 분해</span></div>
         <div class="row"><span class="k">T0 · 레짐</span><span class="v" id="vRegime">—</span></div>
         <div class="row"><span class="k">T1·T2 · 추세</span><span class="v" id="vTrend">—</span></div>
         <div class="row"><span class="k">T3 · 타이밍</span><span class="v" id="vTiming">—</span></div>
@@ -493,10 +512,6 @@
           <div id="fngTimeline"></div>
           <div class="fng-tl-lab" style="margin-top:10px">구성 지표 7</div>
           <div class="fng-inds" id="fngIndicators"></div>
-        </div>
-        <div class="card" id="mtfCard">
-          <div class="lab">다중 타임프레임 <span class="hint">일·주·월 추세</span></div>
-          <div id="mtfBox"><div class="none">불러오는 중…</div></div>
         </div>
       </div>
       <div class="stack">
@@ -564,11 +579,8 @@
         <div class="psout" id="psOut"><div class="none">계좌 금액을 입력하세요</div></div>
       </div>
       <div class="card" id="riskToolCard">
-        <div class="lab">켈리 · 손절 제안 <span class="hint">변동성 기반 · 가정 입력</span></div>
+        <div class="lab">변동성 · 손절 제안 <span class="hint">실현변동성 기반 손절폭</span></div>
         <div class="kl-stop" id="klStop"></div>
-        <div class="kl-inrow"><label>승률%</label><input id="klWin" type="number" value="55" step="1">
-          <label>손익비</label><input id="klRR" type="number" value="1.5" step="0.1"></div>
-        <div id="klOut"></div>
       </div>
       <div class="card macro">
         <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정(what-if)</span></div>
@@ -759,15 +771,14 @@ function renderEventList(){
   const el=document.getElementById('evtList'); if(!el)return;
   if(!state.events||!state.events.length){buildMarketEvents();}
   const today=new Date().toISOString().slice(0,10);
-  const up=(state.events||[]).filter(e=>e.date>=today).slice(0,6);
-  const recent=(state.events||[]).filter(e=>e.date<today).slice(-3).reverse();
+  const up=(state.events||[]).filter(e=>e.date>=today).slice(0,8);   // 다가올 이벤트만(지난 건 숨김)
   const row=e=>{const dd=Math.round((new Date(e.date+'T00:00:00Z')-new Date(today+'T00:00:00Z'))/86400000);
-    const tag=dd>0?'D-'+dd:dd===0?'D-DAY':'지남';
-    const tcol=dd===0?C.caution:dd>0?C.ink:C.faint;
+    const tag=dd>0?'D-'+dd:'D-DAY';
+    const tcol=dd===0?C.caution:C.ink;
     return "<div class='evt'><span class='edot' style='background:"+e.color+"'></span>"
       +"<span class='enm'>"+e.ko+"</span>"
       +"<span class='edate'>"+e.date+" <b style='color:"+tcol+"'>"+tag+"</b></span></div>";};
-  el.innerHTML=(up.concat(recent).map(row).join(''))||"<div class='none'>이벤트 없음</div>";
+  el.innerHTML=(up.map(row).join(''))||"<div class='none'>다가올 이벤트 없음</div>";
 }
 let patternShapes=[];
 function clearPatternShapes(){patternShapes.forEach(s=>{try{priceChart.removeSeries(s);}catch(e){}});patternShapes=[];}
@@ -1026,7 +1037,7 @@ function renderTickers(){
     setTicker(b.dataset.t);
   });
 }
-function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); setTimeout(loadMtf,4500); }
+function setTicker(t){ if(t===state.ticker)return; state.ticker=t; clearFib(); renderTickers(); load(); restoreQuant(); restoreSeasonality(); }
 function addTicker(t){ t=t.toUpperCase(); if(!state.watchlist.includes(t)){state.watchlist.push(t);saveWatchlist();} renderTickers(); }
 function removeTicker(t){
   if(PINNED.includes(t))return;
@@ -1808,9 +1819,40 @@ function renderExitPlan(x){
                         :("→ 현재 과열 아님, 전량("+n+"주) 홀딩");};
   if(inp){inp.oninput=()=>{state.exitShares=inp.value;upd();};upd();}
 }
+function renderEng200(x){
+  const box=document.getElementById('eng200Body'), card=document.getElementById('eng200');
+  if(!box||!card)return;
+  card.classList.remove('pos','neg');
+  if(!x){box.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";return;}
+  if(!x.above200){
+    card.classList.add('neg');   // 현금 구간 = 빨강 점멸
+    box.innerHTML="<div class='eng200-status' style='color:"+C.down+"'>🔴 현금 구간</div>"
+      +"<div class='eng200-sub'>200일선 아래 — 보유 대상 아님. 떨어지는 칼날 잡지 말 것. <b>재돌파 확인 후 진입.</b></div>"
+      +"<div class='eng200-row'><span>현재가 <b>$"+x.price+"</b></span>"+(x.sma200?"<span>200일선 <b>$"+x.sma200+"</b></span>":"")
+      +(x.disparity!=null?"<span>이격도 <b style='color:"+C.down+"'>"+x.disparity+"%</b></span>":"")+"</div>";
+    return;
+  }
+  card.classList.add('pos');     // 홀딩 구간 = 초록 점멸
+  const tgt=x.target_pct, trimmed=x.trim_total_pct||0;
+  let entry="";
+  if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+C.go+"'>🟢 진입 신호 — 최근 200선 재돌파. 추세 전환 확인됨, 진입 구간.</div>";
+  box.innerHTML="<div class='eng200-status' style='color:"+C.go+"'>🟢 홀딩 구간</div>"
+    +"<div class='eng200-sub'>200일선 위 — 추세 유효. 흔들리지 말고 <b>보유 유지</b>. (보유 "+x.days_above+"일째)</div>"
+    +"<div class='eng200-row'>"
+    +"<span>현재가 <b>$"+x.price+"</b></span><span>200일선 <b>$"+x.sma200+"</b></span>"
+    +"<span>이격도 <b style='color:"+(x.disparity>=20?C.amber:C.go)+"'>+"+x.disparity+"%</b></span>"
+    +"<span>권장 보유 <b style='color:"+(trimmed>0?C.amber:C.go)+"'>"+tgt+"%</b>"+(trimmed>0?" (익절 "+trimmed+"%)":"")+"</span>"
+    +"</div>"+entry
+    +"<div class='btnote' style='margin-top:6px'>아래 <b>과열 분할 익절 플랜</b>에서 구체적 익절 주수·가격 확인.</div>";
+}
 function renderEngine(e){
   if(!e)return;
+  renderEng200(e.exit_plan);
   renderExitPlan(e.exit_plan);
+  // 20-parameter engine 테두리: 고위험=빨강, 양호=초록
+  const ec=document.getElementById('engClassic');
+  if(ec){ec.classList.remove('pos','neg');
+    if(e.risk>=60)ec.classList.add('neg'); else if((e.size||0)>=Math.round((e.maxcap||80)*0.6))ec.classList.add('pos');}
   const sz=e.size, cap=e.maxcap||80;
   const f=document.getElementById('sizefill'); f.style.width=sz+'%'; f.textContent=sz+'%';
   f.style.background=sz>=Math.round(cap*0.7)?C.up:sz>=20?C.amber:C.down;
@@ -2055,7 +2097,7 @@ function renderPosSize(){
     +por('현금 보유',('$'+Math.round(acct-real).toLocaleString()));
 }
 function renderRiskTools(){
-  const e=curEngine(); const stop=document.getElementById('klStop'), out=document.getElementById('klOut'); if(!stop||!out)return;
+  const e=curEngine(); const stop=document.getElementById('klStop'); if(!stop)return;
   if(e&&e.metrics&&e.metrics.rvol!=null){
     const rv=e.metrics.rvol, dv=rv/Math.sqrt(252); // 일변동성(%)
     const s2=(2*dv).toFixed(1), s3=(3*dv).toFixed(1);
@@ -2063,32 +2105,8 @@ function renderRiskTools(){
       +"<div class='por'><span>일 변동성</span><span class='pv'>"+dv.toFixed(2)+"%</span></div>"
       +"<div class='por'><span>제안 손절폭(2σ·3σ)</span><span class='pv' style='color:var(--stop)'>−"+s2+"% / −"+s3+"%</span></div>";
   }else stop.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";
-  const p=Math.max(0,Math.min(100,parseFloat(document.getElementById('klWin').value)))/100;
-  const b=Math.max(0.1,parseFloat(document.getElementById('klRR').value)||1.5);
-  const f=Math.max(0,p-(1-p)/b); // 풀 켈리(분수)
-  const fp=(f*100).toFixed(1), half=(f*50).toFixed(1), quart=(f*25).toFixed(1);
-  out.innerHTML="<div class='por'><span>풀 켈리</span><span class='pv'>"+fp+"%</span></div>"
-    +"<div class='por'><span>½ 켈리(권장)</span><span class='pv' style='color:var(--accent)'>"+half+"%</span></div>"
-    +"<div class='por'><span>¼ 켈리(보수)</span><span class='pv'>"+quart+"%</span></div>"
-    +"<div class='btnote' style='margin-top:6px'>켈리는 승률·손익비 '가정'에 따른 참고치입니다. 과대평가 위험이 커 통상 ½~¼만 사용합니다.</div>";
 }
-async function loadMtf(){
-  const box=document.getElementById('mtfBox'); if(!box)return;
-  try{
-    const d=await safeJson(await fetch('/mtf/'+state.ticker));
-    if(d.error)throw new Error(d.error);
-    const rgCol=r=>r==='상승추세'?'var(--go)':r==='하락추세'?'var(--stop)':r==='추세약화'?'var(--caution)':'var(--muted)';
-    box.innerHTML=(d.tfs||[]).map(t=>{
-      if(t.error)return "<div class='mtfrow'><span class='mtf-tf'>"+t.tf+"</span><span class='none'>데이터 부족</span></div>";
-      return "<div class='mtfrow'><span class='mtf-tf'>"+t.tf+"</span>"
-        +"<span class='mtf-rg' style='color:"+rgCol(t.regime)+"'>"+t.regime+"</span>"
-        +"<span class='mtf-sz'>비중 "+t.size+"% · "+(t.above200?'200MA↑':'200MA↓')+"</span></div>";
-    }).join('');
-    scheduleMason();
-  }catch(e){box.innerHTML="<div class='none'>다중 TF 로딩 실패</div>";}
-}
-(function(){const a=document.getElementById('psAcct'); if(a)a.oninput=()=>{renderPosSize();scheduleMason();};
-  ['klWin','klRR'].forEach(id=>{const el=document.getElementById(id); if(el)el.oninput=()=>{renderRiskTools();scheduleMason();};});})();
+(function(){const a=document.getElementById('psAcct'); if(a)a.oninput=()=>{renderPosSize();scheduleMason();};})();
 
 /* ---------- 데크 메이슨리: 카드를 가장 짧은 컬럼에 채워 공백 최소화 ---------- */
 let _masonRO=null;
@@ -2224,7 +2242,7 @@ function initAlerts(){
   startAlerts();
 }
 buildMarketEvents();
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();setTimeout(loadMtf,4500);scheduleMason();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();scheduleMason();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>

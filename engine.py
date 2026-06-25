@@ -107,6 +107,13 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
     DISP_STEPS = [(0.20, 0.10), (0.35, 0.10), (0.50, 0.10)]   # (이격 임계, 단계 익절비율)
     if sma200 == sma200 and sma200 > 0:
         disp = (c - sma200) / sma200            # 현재 이격도(분수)
+        cl_s = k["close"]; above_s = (cl_s > k["sma200"])
+        entry_signal = False; days_above = 0
+        if above200 and len(above_s) > 6:
+            entry_signal = bool((~above_s.iloc[-6:-1]).any())   # 직전 5봉 중 아래였던 적 → 재돌파
+            for v in reversed(above_s.tolist()):
+                if v: days_above += 1
+                else: break
         target = 1.0
         triggered = 0
         steps = []
@@ -130,6 +137,8 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             "trim_total_pct": int(round((1 - target) * 100)) if above200 else None,  # 지금까지 누적 익절%
             "steps": steps,
             "stages_triggered": triggered,
+            "entry_signal": bool(entry_signal),
+            "days_above": int(days_above),
         }
     else:
         exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
