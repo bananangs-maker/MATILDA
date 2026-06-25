@@ -1314,6 +1314,7 @@ function renderQuant(d){
       document.getElementById('qMaR').innerHTML=h;
     }
     // 단순 베이스라인 비교
+    const bl=d.baselines;
     if(bl){
       const order=['전략','200MA 필터','변동성타겟','고정비중','매수후보유'];
       const rowOf=(nm,m)=>{
