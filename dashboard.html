@@ -62,6 +62,11 @@
   #osc-tabs button.ob{animation:obPulse 1.1s ease-in-out infinite;border-color:#ff3b46}
   #osc-tabs button.os{animation:osPulse 1.1s ease-in-out infinite;border-color:#2bd07a}
   #osc{height:170px}
+  .ep-head{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--muted);margin-top:6px}
+  .ep-head b{font-family:var(--mono);color:var(--ink)}
+  .ep-calc{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+  .ep-calc input{background:var(--panel2);border:1px solid var(--border);color:var(--ink);border-radius:3px;padding:4px 7px;font-family:var(--mono)}
+  .card.exitplan{border-color:var(--accent)}
   #deckmason{margin-top:12px}
   .topband{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:start;margin-bottom:10px}
   @media(max-width:900px){.topband{grid-template-columns:1fr}}
@@ -453,6 +458,11 @@
         <div class="senti" id="fundPrice"></div>
         <div id="fundExtra"></div>
       </div>
+    </div>
+    <div class="card exitplan" id="exitPlanCard" style="margin-bottom:10px">
+      <div class="lab">과열 분할 익절 플랜 <span class="hint">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span>
+        <span style="float:right;font-size:9.5px;color:var(--faint)">보유수량 입력 시 익절 주수 계산</span></div>
+      <div id="exitPlanBody"></div>
     </div>
     <div id="masonbody">
       <div class="stack">
@@ -1761,8 +1771,46 @@ document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
 });
 
 /* ---------- 엔진 / 요약 게이지 / 크로스·캔들 렌더 ---------- */
+function renderExitPlan(x){
+  const box=document.getElementById('exitPlanBody'); if(!box)return;
+  if(!x){box.innerHTML="<div class='none' style='font-size:11px;color:var(--faint)'>데이터 없음</div>";return;}
+  if(!x.above200){
+    box.innerHTML="<div class='ep-now' style='color:"+C.down+"'><b>200일선 아래</b> — 현금 보유 구간(홀딩 대상 아님). 재돌파 시 진입.</div>"
+      +"<div class='btnote'>현재가 $"+x.price+(x.sma200?" · 200일선 $"+x.sma200:"")+"</div>";
+    return;
+  }
+  const tgt=x.target_pct, trimmed=x.trim_total_pct||0;
+  const tgtCol=trimmed>0?C.amber:C.up;
+  let head="<div class='ep-head'>"
+    +"<span>현재가 <b>$"+x.price+"</b></span>"
+    +"<span>200일선 <b>$"+x.sma200+"</b></span>"
+    +"<span>이격도 <b style='color:"+(x.disparity>=20?C.amber:C.up)+"'>+"+x.disparity+"%</b></span>"
+    +"<span>권장 보유 <b style='color:"+tgtCol+"'>"+tgt+"%</b>"+(trimmed>0?" (누적 익절 "+trimmed+"%)":"")+"</span>"
+    +"</div>";
+  // 보유수량 입력 → 익절 주수
+  const shares=state.exitShares||'';
+  let calc="<div class='ep-calc'><label>보유수량 <input type='number' id='exitShares' value='"+shares+"' placeholder='예: 100' style='width:90px'></label>"
+    +"<span id='exitSharesOut' style='color:var(--muted);font-size:11px'></span></div>";
+  // 단계 표시
+  let rows="<table class='wftab' style='margin-top:8px'><tr><th>과열 단계</th><th>도달가</th><th>이 단계 익절</th><th>상태</th></tr>";
+  x.steps.forEach(s=>{
+    const stat=s.hit?"<span style='color:"+C.amber+"'>도달 ✓</span>":"<span style='color:var(--faint)'>대기</span>";
+    rows+="<tr"+(s.hit?" style='background:var(--accent-soft)'":"")+"><td>이격 +"+s.disparity+"%</td><td>$"+s.price+"</td><td>보유의 "+s.trim_pct+"%</td><td>"+stat+"</td></tr>";
+  });
+  rows+="</table>";
+  const note="<div class='btnote' style='margin-top:6px'>200일선 위 홀딩이 핵심. 과열(이격↑)일수록 단계별로 일부만 익절하고 <b>핵심 70%는 200선 깰 때까지 보유</b>. 백테스트로 TQQQ·SOXL 둘 다 검증된 규칙(칼마 개선·MDD 감소).</div>";
+  box.innerHTML=head+calc+rows+note;
+  const inp=document.getElementById('exitShares'), out=document.getElementById('exitSharesOut');
+  const upd=()=>{const n=parseFloat(inp.value);
+    if(isNaN(n)||n<=0){out.textContent='';return;}
+    const keep=Math.round(n*tgt/100), sell=n-keep;
+    out.innerHTML=sell>0?("→ <b style='color:"+C.amber+"'>"+sell+"주 익절</b>, "+keep+"주 보유 유지")
+                        :("→ 현재 과열 아님, 전량("+n+"주) 홀딩");};
+  if(inp){inp.oninput=()=>{state.exitShares=inp.value;upd();};upd();}
+}
 function renderEngine(e){
   if(!e)return;
+  renderExitPlan(e.exit_plan);
   const sz=e.size, cap=e.maxcap||80;
   const f=document.getElementById('sizefill'); f.style.width=sz+'%'; f.textContent=sz+'%';
   f.style.background=sz>=Math.round(cap*0.7)?C.up:sz>=20?C.amber:C.down;

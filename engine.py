@@ -102,11 +102,46 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
         big = sorted(((comp[x], x) for x in ("이격", "낙폭", "급락", "자금흐름", "매크로")), reverse=True)
         rationale.append("급성 리스크: " + ", ".join("%s" % x for v, x in big if v > 0.2))
 
+    # ── 검증된 익절 플랜 (200일선 이격도 단계별 익절: 20/35/50% → 보유 90/80/70%) ──
+    # 백테스트로 TQQQ·SOXL 둘 다 평원 검증됨. 200선 아래=현금, 위=홀딩, 과열=일부 익절(핵심 70% 유지).
+    DISP_STEPS = [(0.20, 0.10), (0.35, 0.10), (0.50, 0.10)]   # (이격 임계, 단계 익절비율)
+    if sma200 == sma200 and sma200 > 0:
+        disp = (c - sma200) / sma200            # 현재 이격도(분수)
+        target = 1.0
+        triggered = 0
+        steps = []
+        for th, cut in DISP_STEPS:
+            hit = above200 and disp >= th
+            if hit:
+                target -= cut; triggered += 1
+            steps.append({"disparity": round(th * 100),
+                          "price": round(sma200 * (1 + th), 2),
+                          "trim_pct": round(cut * 100),
+                          "hit": bool(hit)})
+        if not above200:
+            target = 0.0
+        target_pct = int(round(target * 100))
+        exit_plan = {
+            "above200": bool(above200),
+            "price": round(c, 2),
+            "sma200": round(sma200, 2),
+            "disparity": round(disp * 100, 1),
+            "target_pct": target_pct,                 # 권장 보유비중(%)
+            "trim_total_pct": int(round((1 - target) * 100)) if above200 else None,  # 지금까지 누적 익절%
+            "steps": steps,
+            "stages_triggered": triggered,
+        }
+    else:
+        exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
+                     "disparity": None, "target_pct": None, "trim_total_pct": None,
+                     "steps": [], "stages_triggered": 0}
+
     return {
         "risk": risk, "risk_label": rlabel, "components": {k_: round(comp[k_] * 100) for k_ in comp},
         "weights": {k_: W[k_] for k_ in W},
         "regime": regime, "size": int(size), "maxcap": int(p["maxcap"] * 100),
         "trend_factor": round(trend_factor, 2), "vol_factor": round(vt, 2),
+        "exit_plan": exit_plan,
         "metrics": {
             "rvol": round(rvol, 1) if rvol == rvol else None,
             "adx": round(adxv, 1) if adxv == adxv else None,
