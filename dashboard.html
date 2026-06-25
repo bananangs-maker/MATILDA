@@ -852,7 +852,7 @@ async function load(){
     if(state.macroOverride.vix!=null)q.push('vix='+state.macroOverride.vix);
     if(state.macroOverride.fng!=null)q.push('fng='+state.macroOverride.fng);
     const res=await fetch('/chart/'+state.ticker+(q.length?'?'+q.join('&'):''));
-    const d=await res.json();
+    const d=await safeJson(res);
     if(!res.ok||d.error) throw new Error(d.error||'서버 오류');
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
@@ -870,8 +870,19 @@ async function load(){
     scheduleMason();
   }catch(e){
     st.className='status err';
-    st.textContent='실패: '+e.message+' — python app.py 실행 여부 확인';
+    st.textContent='실패: '+e.message;
   }
+}
+// 응답이 JSON이 아닐 때(Render 502/배포중 HTML 등) 깔끔한 메시지로 변환
+async function safeJson(res){
+  const ct=res.headers.get('content-type')||'';
+  const txt=await res.text();
+  if(ct.indexOf('application/json')<0){
+    if(!res.ok) throw new Error('서버 응답 오류 (HTTP '+res.status+') — 배포 중이거나 일시 장애일 수 있어요. 1~2분 후 새로고침해 주세요.');
+    throw new Error('서버가 예상치 못한 응답을 보냈습니다 (배포 중일 수 있음). 잠시 후 새로고침.');
+  }
+  try{ return JSON.parse(txt); }
+  catch(e){ throw new Error('응답 파싱 실패 — 잠시 후 새로고침해 주세요.'); }
 }
 // T0 레짐: 거시(VIX/FNG) + 가격 리스크(급락/낙폭). pass = !RED
 function regime(){
@@ -980,7 +991,7 @@ async function saveWatchlist(){
 }
 async function loadWatchlist(){
   let wl=loadLS('matilda_watchlist',PINNED.slice());
-  try{const r=await (await fetch('/watchlist')).json();
+  try{const r=await safeJson(await fetch('/watchlist'));
     if(r.configured&&Array.isArray(r.tickers)&&r.tickers.length)wl=r.tickers;}catch(e){}
   PINNED.forEach(p=>{if(!wl.includes(p))wl.unshift(p);});
   state.watchlist=wl; renderTickers();
@@ -992,7 +1003,7 @@ sInput.addEventListener('input',()=>{
   if(q.length<1){sRes.innerHTML='';sRes.classList.remove('show');return;}
   searchTimer=setTimeout(async()=>{
     try{
-      const d=await (await fetch('/search?q='+encodeURIComponent(q))).json();
+      const d=await safeJson(await fetch('/search?q='+encodeURIComponent(q)));
       const rs=d.results||[];
       if(!rs.length){sRes.innerHTML="<div class='sempty'>"+(d.error?'검색 불가(키 확인)':'결과 없음')+"</div>";}
       else sRes.innerHTML=rs.map(r=>"<div class='sr' data-sym='"+r.symbol+"'><b>"+r.symbol+"</b> <span>"+r.name+"</span> <i>"+r.type+" · "+r.exchange+"</i></div>").join('');
@@ -1144,7 +1155,7 @@ function fngBadgeColor(v){return v==null?C.faint:(v<=24?C.down:(v>=75?C.up:C.mut
 function rateKo(r){const m=FNG_RATE_KO[(r||'').toLowerCase()];return m?m[0]:(r||'—');}
 async function loadFngFull(){
   try{
-    const d=await (await fetch('/fng_full')).json();
+    const d=await safeJson(await fetch('/fng_full'));
     if(d.error||!d.overview)return;
     state.fngFull=d; renderFngBlock(d); scheduleMason();
   }catch(e){}
@@ -1300,7 +1311,7 @@ async function runQuant(){
   const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
   const btn=document.getElementById('qRun');btn.disabled=true;btn.textContent='실행 중…';
   try{
-    const d=await (await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp)).json();
+    const d=await safeJson(await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp));
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
@@ -1316,7 +1327,7 @@ async function loadSeasonality(){
   const note=document.getElementById('seaMonths');
   document.getElementById('seaBtn').textContent='불러오는 중…';
   try{
-    const d=await (await fetch('/seasonality/'+state.ticker)).json();
+    const d=await safeJson(await fetch('/seasonality/'+state.ticker));
     if(d.error)throw new Error(d.error);
     renderSeasonality(d);
     try{localStorage.setItem('mat_s_'+state.ticker,JSON.stringify(d));}catch(e){}
@@ -1582,7 +1593,7 @@ async function saveDrawings(){
 async function loadDrawings(){
   let items=loadLS('matilda_draw_'+state.ticker,[]);
   try{
-    const r=await (await fetch('/drawings/'+state.ticker)).json();
+    const r=await safeJson(await fetch('/drawings/'+state.ticker));
     if(r.configured){document.getElementById('drawSync').textContent='클라우드 저장(Supabase)';
       if(Array.isArray(r.drawings)&&r.drawings.length)items=r.drawings;}
   }catch(e){}
@@ -1704,7 +1715,7 @@ function buildTape(inner,items){
 async function loadMktTape(){
   const inner=document.getElementById('mktTapeInner'); if(!inner)return;
   try{
-    const d=await (await fetch('/tickers')).json();
+    const d=await safeJson(await fetch('/tickers'));
     const ts=(d.tickers||[]).filter(t=>t.price!=null);
     if(!ts.length){document.getElementById('mktTape').style.display='none';return;}
     document.getElementById('mktTape').style.display='';
@@ -1867,7 +1878,7 @@ function renderRiskTools(){
 async function loadMtf(){
   const box=document.getElementById('mtfBox'); if(!box)return;
   try{
-    const d=await (await fetch('/mtf/'+state.ticker)).json();
+    const d=await safeJson(await fetch('/mtf/'+state.ticker));
     if(d.error)throw new Error(d.error);
     const rgCol=r=>r==='상승추세'?'var(--go)':r==='하락추세'?'var(--stop)':r==='추세약화'?'var(--caution)':'var(--muted)';
     box.innerHTML=(d.tfs||[]).map(t=>{
@@ -1987,7 +1998,7 @@ async function checkAlerts(manual){
   if(!state.alertCfg.on && !manual)return;
   const st=document.getElementById('alStatus'); st.textContent='점검 중…';
   for(const sym of state.watchlist){
-    try{const d=await (await fetch('/chart/'+sym)).json(); if(!d.error)evalTicker(sym,d);}catch(e){}
+    try{const d=await safeJson(await fetch('/chart/'+sym)); if(!d.error)evalTicker(sym,d);}catch(e){}
     await new Promise(r=>setTimeout(r,250)); // 분당 제한 회피
   }
   st.textContent=state.alertCfg.on?('켜짐 · '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 점검'):'꺼짐';
