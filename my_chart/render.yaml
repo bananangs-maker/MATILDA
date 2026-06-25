@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: my-chart
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: USE_MOCK
+        value: "false"
+      - key: TWELVEDATA_API_KEY
+        sync: false      # 값은 Render 대시보드에서 직접 입력 (repo에 저장 안 됨)
