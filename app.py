@@ -79,7 +79,7 @@ def _load(ticker, interval="1day", long=False):
     if hit and time.time() - hit[2] < _TTL:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    yrange = "max" if long else "3y"
+    yrange = "10y" if long else "3y"
     df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
     _CACHE[ckey] = (df, source, time.time())
     return df, source

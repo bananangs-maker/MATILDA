@@ -71,61 +71,84 @@ def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day")
 
 
 def _from_yahoo(ticker: str, interval: str = "1day", yrange: str = None) -> pd.DataFrame:
-    """야후 파이낸스 chart v8 (키 불필요 · 일/주/월 지원 · 폴백 주력)."""
+    """야후 파이낸스 chart v8 (키 불필요 · 일/주/월 지원 · 폴백 주력). 헤더 보강 + 429 재시도."""
     iv = {"1day": "1d", "1week": "1wk", "1month": "1mo"}.get(interval, "1d")
     rng = yrange or {"1day": "3y", "1week": "10y", "1month": "max"}.get(interval, "3y")
+    hdr = {"User-Agent": UA["User-Agent"],
+           "Accept": "application/json,text/plain,*/*",
+           "Accept-Language": "en-US,en;q=0.9",
+           "Referer": "https://finance.yahoo.com/"}
     last = None
-    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
-        try:
-            r = requests.get(f"https://{host}/v8/finance/chart/{ticker}",
-                             params={"range": rng, "interval": iv},
-                             headers=UA, timeout=12)
-            if r.status_code != 200:
-                last = f"HTTP {r.status_code}"; continue
-            j = r.json() or {}
-            ch = (j.get("chart") or {})
-            if ch.get("error"):
-                last = str(ch["error"]); continue
-            res = (ch.get("result") or [None])[0]
-            if not res or not res.get("timestamp"):
-                last = "빈 응답"; continue
-            ts = res["timestamp"]
-            q = (res.get("indicators", {}).get("quote") or [{}])[0]
-            adj = (res.get("indicators", {}).get("adjclose") or [{}])
-            adjc = adj[0].get("adjclose") if adj and adj[0] else None
-            op, hi, lo, cl, vo = q.get("open"), q.get("high"), q.get("low"), q.get("close"), q.get("volume")
-            rows = []
-            for i, t in enumerate(ts):
-                c = (adjc[i] if adjc else None)
-                c = c if c is not None else (cl[i] if cl else None)
-                if c is None:
-                    continue
-                rows.append({"date": pd.to_datetime(t, unit="s").strftime("%Y-%m-%d"),
-                             "open": (op[i] if op and op[i] is not None else c),
-                             "high": (hi[i] if hi and hi[i] is not None else c),
-                             "low": (lo[i] if lo and lo[i] is not None else c),
-                             "close": c,
-                             "volume": (vo[i] if vo and vo[i] is not None else 0)})
-            if not rows:
-                last = "유효 행 없음"; continue
-            df = pd.DataFrame(rows).dropna(subset=["close"])
-            return df.sort_values("date").reset_index(drop=True)
-        except Exception as e:
-            last = str(e); continue
+    for attempt in range(2):                       # 429면 한 번 더(호스트 교차)
+        for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+            try:
+                r = requests.get(f"https://{host}/v8/finance/chart/{ticker}",
+                                 params={"range": rng, "interval": iv,
+                                         "includePrePost": "false"},
+                                 headers=hdr, timeout=12)
+                if r.status_code == 429:
+                    last = "HTTP 429"; continue
+                if r.status_code != 200:
+                    last = f"HTTP {r.status_code}"; continue
+                j = r.json() or {}
+                ch = (j.get("chart") or {})
+                if ch.get("error"):
+                    last = str(ch["error"]); continue
+                res = (ch.get("result") or [None])[0]
+                if not res or not res.get("timestamp"):
+                    last = "빈 응답"; continue
+                ts = res["timestamp"]
+                q = (res.get("indicators", {}).get("quote") or [{}])[0]
+                adj = (res.get("indicators", {}).get("adjclose") or [{}])
+                adjc = adj[0].get("adjclose") if adj and adj[0] else None
+                op, hi, lo, cl, vo = q.get("open"), q.get("high"), q.get("low"), q.get("close"), q.get("volume")
+                rows = []
+                for i, t in enumerate(ts):
+                    c = (adjc[i] if adjc else None)
+                    c = c if c is not None else (cl[i] if cl else None)
+                    if c is None:
+                        continue
+                    rows.append({"date": pd.to_datetime(t, unit="s").strftime("%Y-%m-%d"),
+                                 "open": (op[i] if op and op[i] is not None else c),
+                                 "high": (hi[i] if hi and hi[i] is not None else c),
+                                 "low": (lo[i] if lo and lo[i] is not None else c),
+                                 "close": c,
+                                 "volume": (vo[i] if vo and vo[i] is not None else 0)})
+                if not rows:
+                    last = "유효 행 없음"; continue
+                df = pd.DataFrame(rows).dropna(subset=["close"])
+                return df.sort_values("date").reset_index(drop=True)
+            except Exception as e:
+                last = str(e); continue
+        if last == "HTTP 429":
+            time.sleep(5)                          # 한도면 잠깐 쉬고 1회 재시도
     raise RuntimeError(f"Yahoo: {last or '실패'}")
 
 
 def _from_stooq(ticker: str) -> pd.DataFrame:
-    r = requests.get(f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d",
-                     headers=UA, timeout=12)
-    r.raise_for_status()
-    df = pd.read_csv(io.StringIO(r.text))
-    df = df.rename(columns={"Date": "date", "Open": "open", "High": "high",
-                            "Low": "low", "Close": "close", "Volume": "volume"})
-    if "date" not in df.columns:
-        raise RuntimeError("Stooq: 예상치 못한 응답(차단 가능)")
-    df = df[["date", "open", "high", "low", "close", "volume"]].dropna(subset=["close"])
-    return df.sort_values("date").reset_index(drop=True)
+    """Stooq 일봉 CSV — 전체 히스토리. 차단(HTML) 감지 시 1회 재시도."""
+    hdr = {"User-Agent": UA["User-Agent"],
+           "Accept": "text/csv,text/plain,*/*",
+           "Accept-Language": "en-US,en;q=0.9",
+           "Referer": "https://stooq.com/"}
+    last = None
+    for attempt in range(2):
+        try:
+            r = requests.get(f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d",
+                             headers=hdr, timeout=12)
+            txt = r.text or ""
+            if r.status_code != 200 or txt.lstrip()[:1] == "<" or "Date" not in txt[:200]:
+                last = "차단/예상치 못한 응답"; time.sleep(2); continue
+            df = pd.read_csv(io.StringIO(txt))
+            df = df.rename(columns={"Date": "date", "Open": "open", "High": "high",
+                                    "Low": "low", "Close": "close", "Volume": "volume"})
+            if "date" not in df.columns:
+                last = "헤더 없음"; continue
+            df = df[["date", "open", "high", "low", "close", "volume"]].dropna(subset=["close"])
+            return df.sort_values("date").reset_index(drop=True)
+        except Exception as e:
+            last = str(e); time.sleep(1)
+    raise RuntimeError(f"Stooq: {last or '실패'}")
 
 
 MARKET_TICKERS = [
