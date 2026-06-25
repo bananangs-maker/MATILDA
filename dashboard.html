@@ -57,9 +57,13 @@
   .osc-tabs button{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);
     background:var(--panel2);border:1px solid var(--border);border-radius:2px;padding:5px 12px;cursor:pointer}
   .osc-tabs button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  @keyframes obPulse{50%{color:#ff3b46}}
+  @keyframes osPulse{50%{color:#2bd07a}}
+  #osc-tabs button.ob{animation:obPulse 1.1s ease-in-out infinite;border-color:#ff3b46}
+  #osc-tabs button.os{animation:osPulse 1.1s ease-in-out infinite;border-color:#2bd07a}
   #osc{height:170px}
   #deckmason{margin-top:12px}
-  .topband{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:stretch;margin-bottom:10px}
+  .topband{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:start;margin-bottom:10px}
   @media(max-width:900px){.topband{grid-template-columns:1fr}}
   #masonbody{display:flex;gap:10px;align-items:flex-start}
   .dm-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
@@ -379,6 +383,7 @@
     <button class="on" data-s="ema20"><span class="sw" style="background:#26C281"></span>EMA20</button>
     <button data-s="sma60"><span class="sw" style="background:#B98AFF"></span>SMA60</button>
     <button class="on" data-s="sma180"><span class="sw" style="background:#ff3b46"></span>SMA180</button>
+    <button class="on" data-s="sma200"><span class="sw" style="background:#FFC94D"></span>200MA</button>
     <button data-s="sar"><span class="sw" style="background:#5A6472"></span>SAR</button>
     <button class="on" data-s="vol"><span class="sw" style="background:#26C281"></span>거래량</button>
     <button class="on" data-s="sig"><span class="sw" style="background:#8A8F9A"></span>매매신호</button>
@@ -649,7 +654,7 @@ const SET_DEFAULTS={rsiOB:70,rsiOS:30,mfiOB:80,mfiOS:20,vixAmber:20,vixRed:28,fn
 function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',interval:'1day',osc:'rsi',
-  toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sar:false,vol:true,sig:true,
+  toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sma200:true,sar:false,vol:true,sig:true,
            vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false,evt:false},
   patternMarkers:[],
   cpatMarkers:[],
@@ -681,6 +686,7 @@ function makeCharts(){
     priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},extra||{}));
   S.bb_upper=line(C.steel,1); S.bb_mid=line(C.steel,1,{lineStyle:2}); S.bb_lower=line(C.steel,1);
   S.ema5=line(C.amber,1.5); S.ema20=line(C.up,1.5); S.sma60=line(C.purple,1.5); S.sma180=line(C.down,1.5);
+  S.sma200=line('#FFC94D',2);
   S.sar=priceChart.addLineSeries({color:C.faint,lineWidth:1,lineVisible:false,
     pointMarkersVisible:true,pointMarkersRadius:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
   S.vwap=line('#E0A458',1.5);
@@ -703,7 +709,7 @@ function applyToggles(){
   S.bb_upper.applyOptions({visible:state.toggles.bb});
   S.bb_mid.applyOptions({visible:state.toggles.bb});
   S.bb_lower.applyOptions({visible:state.toggles.bb});
-  ['ema5','ema20','sma60','sma180','sar'].forEach(k=>S[k].applyOptions({visible:state.toggles[k]}));
+  ['ema5','ema20','sma60','sma180','sma200','sar'].forEach(k=>S[k].applyOptions({visible:state.toggles[k]}));
   S.vwap.applyOptions({visible:state.toggles.vwap});
   [S.kelt_up,S.kelt_low].forEach(s=>s.applyOptions({visible:state.toggles.kelt}));
   [S.donch_up,S.donch_low].forEach(s=>s.applyOptions({visible:state.toggles.donch}));
@@ -806,11 +812,34 @@ function locateBar(date){
   priceChart.timeScale().setVisibleRange({from,to});
   document.getElementById('price').scrollIntoView({behavior:'smooth',block:'center'});
 }
+function _lastVal(a){return (a&&a.length)?a[a.length-1].value:null;}
+function _dispLast(d){const c=d.candles||[],N=20;if(c.length<N)return null;
+  let s=0;for(let j=c.length-N;j<c.length;j++)s+=c[j].close;const ma=s/N;
+  return (c[c.length-1].close/ma-1)*100;}
+function updateOscPulse(d){
+  const ex=(state.settings&&state.settings.extMax)||12;
+  // [최신값, 과매수임계, 과매도임계] — willr은 -20이 과매수(높을수록), -80 과매도
+  const cfg={
+    rsi:[_lastVal(d.rsi),70,30], mfi:[_lastVal(d.mfi),80,20],
+    cci:[_lastVal(d.cci),100,-100], stoch:[_lastVal(d.stoch_k),80,20],
+    willr:[_lastVal(d.willr),-20,-80], disp:[_dispLast(d),ex,-ex]
+  };
+  document.querySelectorAll('#osc-tabs button').forEach(b=>{
+    b.classList.remove('ob','os');
+    const c=cfg[b.dataset.o]; if(!c||c[0]==null)return;   // MACD·OBV·ADX·CMF는 과매수/과매도 개념 없음 → 점멸 안 함
+    if(c[0]>=c[1])b.classList.add('ob'); else if(c[0]<=c[2])b.classList.add('os');
+  });
+}
 function renderPrice(d){
   candle.setData(d.candles); vol.setData(d.volume);
   S.bb_upper.setData(d.bb_upper); S.bb_mid.setData(d.bb_mid); S.bb_lower.setData(d.bb_lower);
   S.ema5.setData(d.ema5); S.ema20.setData(d.ema20); S.sma60.setData(d.sma60); S.sma180.setData(d.sma180);
+  {const c=d.candles||[],N=200,out=[];let sum=0;
+    for(let i=0;i<c.length;i++){sum+=c[i].close;if(i>=N)sum-=c[i-N].close;
+      if(i>=N-1)out.push({time:c[i].time,value:+(sum/N).toFixed(4)});}
+    S.sma200.setData(out);}
   S.sar.setData(d.sar);
+  updateOscPulse(d);
   if(d.vwap)S.vwap.setData(d.vwap);
   if(d.kelt_up){S.kelt_up.setData(d.kelt_up);S.kelt_low.setData(d.kelt_low);}
   if(d.donch_up){S.donch_up.setData(d.donch_up);S.donch_low.setData(d.donch_low);}
