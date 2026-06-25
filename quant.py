@@ -355,6 +355,63 @@ def exit_research(df, cost_bps=5.0, expense=0.0095):
     return out
 
 
+def bear_research(df, cost_bps=5.0, expense=0.0095):
+    """[대세하락 검증] 역배열(50<200) 장기하락에서 '200MA 재돌파 재진입'이 휩쏘로 손해인지,
+    '정배열/200기울기 필터로 관망'이 나은지 검증. 전체 히스토리(2000~ 약세장 포함) 필요.
+    핵심: 역배열 구간만 떼어 각 규칙의 성과를 비교."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma50, sma200 = k["close"], k["sma50"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    align = (sma50 > sma200).to_numpy()                       # 정배열
+    rising = (sma200 > sma200.shift(20)).to_numpy()           # 200선 우상향(20일 기준)
+    bear = (sma50 < sma200).to_numpy() & ~warm                # 역배열 구간
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    variants = {
+        "200MA 단독": E(np.where(above, 1.0, 0.0)),
+        "정배열 필터": E(np.where(above & align, 1.0, 0.0)),
+        "200기울기 필터": E(np.where(above & rising, 1.0, 0.0)),
+        "정배열+기울기": E(np.where(above & align & rising, 1.0, 0.0)),
+    }
+    out = {}
+    bear_perf = {}
+    for nm, e in variants.items():
+        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+        # 역배열 구간만의 성과(보유 포지션은 직전봉 레짐 기준)
+        bmask = pd.Series(bear, index=idx).shift(1).fillna(False).astype(bool).to_numpy()
+        rb = sr.to_numpy()[bmask]
+        rb = rb[~np.isnan(rb)]
+        if len(rb) > 5:
+            eqb = np.cumprod(1 + rb)
+            mdd_b = float((eqb / np.maximum.accumulate(eqb) - 1).min() * 100)
+            bear_perf[nm] = {"ret": round((eqb[-1] - 1) * 100, 1), "mdd": round(mdd_b, 1), "days": int(len(rb))}
+        else:
+            bear_perf[nm] = {"ret": None, "mdd": None, "days": int(len(rb))}
+
+    # 진단: 역배열 비중, 역배열 중 200선 교차 횟수(휩쏘)
+    bear_days = int(bear.sum())
+    total_days = int((~warm).sum())
+    cross_in_bear = 0
+    av = above
+    for i in range(1, len(av)):
+        if bear[i] and av[i] != av[i - 1]:
+            cross_in_bear += 1
+    bear_yrs = max(0.1, bear_days / 252.0)
+    diag = {"bear_days": bear_days, "bear_pct": round(bear_days / max(1, total_days) * 100, 1),
+            "cross_in_bear_yr": round(cross_in_bear / bear_yrs, 1),
+            "period_start": str(df["date"].iloc[0]) if "date" in df.columns else None,
+            "period_end": str(df["date"].iloc[-1]) if "date" in df.columns else None}
+    return {"variants": out, "bear": bear_perf, "diag": diag}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -366,8 +423,9 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     roll = rolling_series(df, p, cost_bps, expense)
     mar, entry_diag = entry_research(df, cost_bps, expense)
     exitr = exit_research(df, cost_bps, expense)
+    bearr = bear_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
-            "entry_diag": entry_diag, "exit_research": exitr,
+            "entry_diag": entry_diag, "exit_research": exitr, "bear_research": bearr,
             "cost_bps": cost_bps, "expense": expense}

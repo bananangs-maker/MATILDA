@@ -72,14 +72,14 @@ def _sentiment_cached():
 
 def _load(ticker, interval="1day", long=False):
     if USE_MOCK:
-        n = {"1day": 2600 if long else 780, "1week": 400, "1month": 300}.get(interval, 780)
+        n = {"1day": 5200 if long else 780, "1week": 400, "1month": 300}.get(interval, 780)
         return mock_ohlcv(ticker, n, interval), "MOCK (합성 데이터)"
     ckey = (ticker, interval, long)
     hit = _CACHE.get(ckey)
     if hit and time.time() - hit[2] < _TTL:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    yrange = "10y" if long else "3y"
+    yrange = "max" if long else "3y"   # 백테스트=전체 히스토리(QQQ/SPY는 2000~, 진짜 약세장 포함)
     df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
     _CACHE[ckey] = (df, source, time.time())
     return df, source

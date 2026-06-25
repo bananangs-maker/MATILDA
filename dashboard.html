@@ -637,6 +637,8 @@
     <div id="qMaR"></div>
     <div class="qsub2">② 과열 익절 견고성 <span class="hint">이격익절 임계값을 흔들어 칼마가 평원인지(강건) 특정값만 튀는지(과적합) 검증. 여러 세트 다 홀딩 이기면 진짜</span></div>
     <div id="qExit"></div>
+    <div class="qsub2">③ 대세하락 검증 <span class="hint">역배열(50<200) 장기하락에서 200MA 재돌파 재진입이 휩쏘 손해인지, 정배열/기울기 필터 관망이 나은지 — QQQ·SPY로 2000·2008 약세장 포함 검증</span></div>
+    <div id="qBear"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1413,6 +1415,38 @@ function renderQuant(d){
       h+="</table><div class='btnote'>기준=<b>홀딩(200MA)</b>(칼마 "+baseCal+"). 이격익절 <b>여러 임계값 세트가 모두</b> 칼마↑(초록·↑)면 강건(평원)=채택. 특정 세트만 튀면 과적합. <b>TQQQ·SOXL 둘 다</b> 평원이어야 함. ★=최고 칼마.</div>";
       document.getElementById('qExit').innerHTML=h;
     }
+    // ③ 대세하락 검증
+    const br=d.bear_research;
+    if(br){
+      const V=br.variants, B=br.bear, dg=br.diag;
+      const baseCal=V['200MA 단독']?V['200MA 단독'].calmar:0;
+      const names=Object.keys(V);
+      let bestNm=null,bestCal=-1e9; names.forEach(n=>{if(V[n].calmar>bestCal){bestCal=V[n].calmar;bestNm=n;}});
+      // 역배열 진단 배너
+      let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11.5px'>"
+        +"<b>역배열 진단</b> &nbsp; 기간 "+(dg.period_start||'')+"~"+(dg.period_end||'')
+        +" &nbsp;·&nbsp; 역배열(50<200) <b style='font-family:var(--mono)'>"+dg.bear_pct+"%</b> of 기간"
+        +" &nbsp;·&nbsp; 역배열 중 200선 교차 <b style='font-family:var(--mono)'>"+dg.cross_in_bear_yr+"회/년</b>"
+        +"<div style='color:var(--faint);font-size:10px;margin-top:4px'>역배열 비중이 충분해야(예: 2000·2008 포함) 의미 있는 검증. <b>QQQ·SPY</b>로 돌리세요(레버리지 ETF는 2010~라 약세장 없음). 교차가 잦을수록 200MA 단독이 휩쏘로 불리.</div></div>";
+      // 전체 성과
+      const rowF=(nm)=>{const m=V[nm];const win=nm===bestNm;const beat=m.calmar>baseCal&&nm!=='200MA 단독';
+        return "<tr"+(win?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(win?" ★":"")+(beat?" <span style='color:var(--go)'>↑</span>":"")+"</td>"
+          +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td><td>"+m.sharpe+"</td>"
+          +"<td class='neg'>"+m.mdd+"%</td><td"+(m.calmar>=baseCal?" style='color:var(--go);font-weight:600'":"")+">"+m.calmar+"</td>"
+          +"<td style='color:var(--faint)'>"+(m.avg_expo!=null?m.avg_expo+'%':'—')+"</td></tr>";};
+      h+="<div class='btnote' style='margin:2px 0'>전체 기간 성과</div>";
+      h+="<table class='wftab cmptab'><tr><th>변형</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th></tr>";
+      names.forEach(n=>h+=rowF(n)); h+="</table>";
+      // 역배열 구간만
+      h+="<div class='btnote' style='margin:8px 0 2px'>역배열(50<200) 구간만의 성과 — <b>여기서 관망 필터가 손실을 줄이면 가설 입증</b></div>";
+      h+="<table class='wftab cmptab'><tr><th>변형</th><th>역배열 수익</th><th>역배열 MDD</th><th>일수</th></tr>";
+      names.forEach(n=>{const b=B[n]||{};
+        h+="<tr><td>"+n+"</td><td class='"+((b.ret||0)>=0?'pos':'neg')+"'>"+(b.ret==null?'—':(b.ret>=0?'+':'')+b.ret+'%')+"</td>"
+          +"<td class='neg'>"+(b.mdd==null?'—':b.mdd+'%')+"</td><td style='color:var(--faint)'>"+(b.days||0)+"</td></tr>";});
+      h+="</table>";
+      h+="<div class='btnote' style='margin-top:6px'>가설: 역배열에서 <b>정배열/기울기 필터</b>(관망)가 200MA 단독보다 역배열 MDD를 줄이면 채택. 단 전체 칼마도 함께 봐야(필터가 상승장 수익을 너무 깎으면 안 됨). QQQ·SPY 둘 다 일관돼야 함.</div>";
+      document.getElementById('qBear').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1473,11 +1507,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q5_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q6_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1492,7 +1526,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q5_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q6_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
