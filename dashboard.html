@@ -1425,9 +1425,10 @@ function renderQuant(d){
       // 역배열 진단 배너
       let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11.5px'>"
         +"<b>역배열 진단</b> &nbsp; 기간 "+(dg.period_start||'')+"~"+(dg.period_end||'')
+        +" &nbsp;·&nbsp; <span style='color:var(--faint)'>출처 "+((d.meta&&d.meta.source)||'?')+" · "+(V['200MA 단독']?'봉수 '+(d.stats?d.stats.bars:'?'):'')+"</span>"
         +" &nbsp;·&nbsp; 역배열(50<200) <b style='font-family:var(--mono)'>"+dg.bear_pct+"%</b> of 기간"
         +" &nbsp;·&nbsp; 역배열 중 200선 교차 <b style='font-family:var(--mono)'>"+dg.cross_in_bear_yr+"회/년</b>"
-        +"<div style='color:var(--faint);font-size:10px;margin-top:4px'>역배열 비중이 충분해야(예: 2000·2008 포함) 의미 있는 검증. <b>QQQ·SPY</b>로 돌리세요(레버리지 ETF는 2010~라 약세장 없음). 교차가 잦을수록 200MA 단독이 휩쏘로 불리.</div></div>";
+        +"<div style='color:var(--faint);font-size:10px;margin-top:4px'>역배열 비중이 충분해야(예: 2000·2008 포함) 의미 있는 검증. <b>QQQ·SPY</b>로 돌리세요(레버리지 ETF는 2010~라 약세장 없음). 출처가 'Twelve Data'면 5000봉(≈2007)에서 잘린 것 — Stooq/Yahoo가 Render에서 막힌 상태.</div></div>";
       // 전체 성과
       const rowF=(nm)=>{const m=V[nm];const win=nm===bestNm;const beat=m.calmar>baseCal&&nm!=='200MA 단독';
         return "<tr"+(win?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(win?" ★":"")+(beat?" <span style='color:var(--go)'>↑</span>":"")+"</td>"
