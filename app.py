@@ -207,7 +207,7 @@ def quant_csv_route():
             elif lc in ("open", "시가"): cmap[c] = "open"
             elif lc in ("high", "고가"): cmap[c] = "high"
             elif lc in ("low", "저가"): cmap[c] = "low"
-            elif lc in ("close", "adj close", "adjclose", "종가"): cmap[c] = "close"
+            elif lc in ("close", "close/last", "adj close", "adjclose", "종가", "last"): cmap[c] = "close"
             elif lc in ("volume", "vol", "거래량"): cmap[c] = "volume"
         df = df.rename(columns=cmap)
         need = {"date", "open", "high", "low", "close"}
@@ -217,7 +217,10 @@ def quant_csv_route():
             df["volume"] = 0
         df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
         for col in ("open", "high", "low", "close", "volume"):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            # Nasdaq 등은 가격에 '$', 천단위 ',' 가 붙어 옴 → 제거 후 숫자화
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(r"[$,]", "", regex=True).str.strip(),
+                errors="coerce")
         df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
         df = df[["date", "open", "high", "low", "close", "volume"]]
         if len(df) < 250:
