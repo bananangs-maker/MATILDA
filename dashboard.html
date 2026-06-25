@@ -629,6 +629,8 @@
       <label>운용보수(%/년)</label>
       <select id="qExp"><option value="0">0</option><option value="0.75">0.75</option><option value="0.95" selected>0.95</option></select>
       <button class="minibtn" id="qRun">백테스트 실행</button>
+      <button class="minibtn" id="qCsvBtn" title="로컬에서 받은 전체 히스토리 CSV로 백테스트(2000~ 약세장 검증)">CSV 업로드 백테스트</button>
+      <input type="file" id="qCsvFile" accept=".csv,.txt" style="display:none">
       <span class="btnote" id="qPeriod"></span>
     </div>
     <div class="stats" id="qStats"></div>
@@ -1532,6 +1534,24 @@ async function runQuant(){
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
 document.getElementById('qRun').onclick=runQuant;
+// CSV 업로드 백테스트 (2000~ 깊은 역사 검증용)
+document.getElementById('qCsvBtn').onclick=()=>document.getElementById('qCsvFile').click();
+document.getElementById('qCsvFile').onchange=async function(){
+  const file=this.files&&this.files[0]; if(!file)return;
+  const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
+  const btn=document.getElementById('qCsvBtn');btn.disabled=true;btn.textContent='업로드 분석 중…';
+  try{
+    const fd=new FormData();
+    fd.append('file',file); fd.append('cost',cost); fd.append('expense',exp);
+    fd.append('label',(file.name||'CSV').replace(/\.(csv|txt)$/i,'').slice(0,12));
+    const d=await safeJson(await fetch('/quant_csv',{method:'POST',body:fd}));
+    if(d.error)throw new Error(d.error);
+    d._cost=cost; d._exp=exp;
+    renderQuant(d);
+    document.getElementById('qPeriod').textContent='업로드: '+file.name+' · '+(d.meta?d.meta.start+'~'+d.meta.end+' · '+d.meta.bars+'봉':'');
+  }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>CSV 실패: "+e.message+"</div>";}
+  finally{btn.disabled=false;btn.textContent='CSV 업로드 백테스트';this.value='';}
+};
 
 /* ---------- 계절성 차트 (SVG) ---------- */
 const MON=['1','2','3','4','5','6','7','8','9','10','11','12'];

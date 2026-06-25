@@ -79,7 +79,7 @@ def _load(ticker, interval="1day", long=False):
     if hit and time.time() - hit[2] < _TTL:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    yrange = "max" if long else "3y"   # 백테스트=전체 히스토리(QQQ/SPY는 2000~, 진짜 약세장 포함)
+    yrange = "10y" if long else "3y"   # 백테스트=10년(클라우드에서 안정적). 2000~ 깊은 역사는 CSV 업로드로.
     df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
     _CACHE[ckey] = (df, source, time.time())
     return df, source
@@ -177,6 +177,60 @@ def quant_route(ticker):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e), "ticker": ticker}), 500
+
+
+@app.route("/quant_csv", methods=["POST"])
+def quant_csv_route():
+    """업로드한 CSV(Date,Open,High,Low,Close,Volume)로 백테스트 — 무료 클라우드가 못 받는
+    장기 히스토리(2000~ 닷컴·금융위기)를 로컬에서 받아 올려 검증하기 위함."""
+    import io as _io
+    try:
+        cost = float(request.form.get("cost", 5))
+    except (ValueError, TypeError):
+        cost = 5.0
+    try:
+        expense = float(request.form.get("expense", 0.95)) / 100.0
+    except (ValueError, TypeError):
+        expense = 0.0095
+    label = (request.form.get("label") or "업로드").upper()[:12]
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"error": "CSV 파일이 없습니다"}), 400
+    try:
+        raw = f.read().decode("utf-8", errors="replace")
+        df = pd.read_csv(_io.StringIO(raw))
+        # 컬럼명 표준화 (대소문자·한글·약어 허용)
+        cmap = {}
+        for c in df.columns:
+            lc = str(c).strip().lower()
+            if lc in ("date", "날짜", "time", "timestamp"): cmap[c] = "date"
+            elif lc in ("open", "시가"): cmap[c] = "open"
+            elif lc in ("high", "고가"): cmap[c] = "high"
+            elif lc in ("low", "저가"): cmap[c] = "low"
+            elif lc in ("close", "adj close", "adjclose", "종가"): cmap[c] = "close"
+            elif lc in ("volume", "vol", "거래량"): cmap[c] = "volume"
+        df = df.rename(columns=cmap)
+        need = {"date", "open", "high", "low", "close"}
+        if not need.issubset(df.columns):
+            return jsonify({"error": f"필요 컬럼 누락. 필요: Date,Open,High,Low,Close,Volume / 받은: {list(df.columns)}"}), 400
+        if "volume" not in df.columns:
+            df["volume"] = 0
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        for col in ("open", "high", "low", "close", "volume"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+        df = df[["date", "open", "high", "low", "close", "volume"]]
+        if len(df) < 250:
+            return jsonify({"error": f"데이터가 너무 짧습니다({len(df)}행). 200일선+검증엔 최소 250행 필요."}), 400
+        import quant as Q
+        res = Q.analyze(df, cost_bps=cost, expense=expense)
+        res.pop("ret", None)
+        res["meta"] = {"ticker": label, "source": "업로드 CSV", "bars": len(df),
+                       "start": df["date"].iloc[0], "end": df["date"].iloc[-1]}
+        return jsonify(res)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": f"CSV 처리 실패: {e}"}), 500
 
 
 @app.route("/mtf/<ticker>")
