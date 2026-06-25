@@ -46,14 +46,13 @@ def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day")
     if not key:
         raise RuntimeError("TWELVEDATA_API_KEY 미설정 (Render 환경변수에 추가하세요)")
     params = {"symbol": ticker, "interval": interval, "outputsize": outputsize, "apikey": key}
-    delays = [0, 7, 14]   # 429(분당 한도) 시 점증 백오프 재시도
+    delays = [0, 3]   # 1차 즉시 + 1회 짧은 재시도. 한도면 빠르게 실패하고 폴백으로 넘김
     last = None
-    for i, d in enumerate(delays):
+    for d in delays:
         if d:
             time.sleep(d)
         r = requests.get("https://api.twelvedata.com/time_series",
                          params=params, headers=UA, timeout=12)
-        # Twelve Data는 본문 JSON code=429 로도 한도를 알림
         body_429 = False
         if r.status_code == 200:
             try:
@@ -64,11 +63,56 @@ def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day")
             if not body_429:
                 return _parse_twelvedata(jj if jj is not None else r.json())
         if r.status_code == 429 or body_429:
-            last = "429 한도 초과 (재시도)"
+            last = "429 한도 초과"
             continue
         r.raise_for_status()
         return _parse_twelvedata(r.json())
-    raise RuntimeError(f"Twelve Data {last or '요청 실패'} — 잠시 후 자동 재시도되며, 일봉은 Stooq로 폴백됩니다")
+    raise RuntimeError(f"Twelve Data {last or '요청 실패'}")
+
+
+def _from_yahoo(ticker: str, interval: str = "1day") -> pd.DataFrame:
+    """야후 파이낸스 chart v8 (키 불필요 · 일/주/월 지원 · 폴백 주력)."""
+    iv = {"1day": "1d", "1week": "1wk", "1month": "1mo"}.get(interval, "1d")
+    rng = {"1day": "2y", "1week": "10y", "1month": "max"}.get(interval, "2y")
+    last = None
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+        try:
+            r = requests.get(f"https://{host}/v8/finance/chart/{ticker}",
+                             params={"range": rng, "interval": iv},
+                             headers=UA, timeout=12)
+            if r.status_code != 200:
+                last = f"HTTP {r.status_code}"; continue
+            j = r.json() or {}
+            ch = (j.get("chart") or {})
+            if ch.get("error"):
+                last = str(ch["error"]); continue
+            res = (ch.get("result") or [None])[0]
+            if not res or not res.get("timestamp"):
+                last = "빈 응답"; continue
+            ts = res["timestamp"]
+            q = (res.get("indicators", {}).get("quote") or [{}])[0]
+            adj = (res.get("indicators", {}).get("adjclose") or [{}])
+            adjc = adj[0].get("adjclose") if adj and adj[0] else None
+            op, hi, lo, cl, vo = q.get("open"), q.get("high"), q.get("low"), q.get("close"), q.get("volume")
+            rows = []
+            for i, t in enumerate(ts):
+                c = (adjc[i] if adjc else None)
+                c = c if c is not None else (cl[i] if cl else None)
+                if c is None:
+                    continue
+                rows.append({"date": pd.to_datetime(t, unit="s").strftime("%Y-%m-%d"),
+                             "open": (op[i] if op and op[i] is not None else c),
+                             "high": (hi[i] if hi and hi[i] is not None else c),
+                             "low": (lo[i] if lo and lo[i] is not None else c),
+                             "close": c,
+                             "volume": (vo[i] if vo and vo[i] is not None else 0)})
+            if not rows:
+                last = "유효 행 없음"; continue
+            df = pd.DataFrame(rows).dropna(subset=["close"])
+            return df.sort_values("date").reset_index(drop=True)
+        except Exception as e:
+            last = str(e); continue
+    raise RuntimeError(f"Yahoo: {last or '실패'}")
 
 
 def _from_stooq(ticker: str) -> pd.DataFrame:
@@ -124,9 +168,10 @@ def daily_ohlcv(ticker: str, yrange: str = "2y", interval: str = "1day") -> tupl
     errors = []
     # 주봉/월봉은 outputsize를 키워 충분한 히스토리 확보 (200기간 MA 등)
     osize = 500 if interval == "1day" else (600 if interval == "1week" else 360)
-    sources = [("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
+    sources = [("Yahoo", lambda: _from_yahoo(ticker, interval)),
+               ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
     if interval == "1day":
-        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 폴백은 일봉만
+        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 마지막 폴백(일봉만)
     for name, fn in sources:
         try:
             df = fn()
