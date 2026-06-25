@@ -314,15 +314,14 @@ def entry_research(df, cost_bps=5.0, expense=0.0095):
 
 
 def exit_research(df, cost_bps=5.0, expense=0.0095):
-    """[과열 익절 연구] 200선 위 홀딩 기본. 과열일수록 일부만 덜어냄(최대 30%, 핵심 70% 유지).
-    원칙: 전량매도 금지(상승 못 버팀 약점 재발 방지). 목표=칼마. 과열=200일선 이격도·RSI(기존 지표).
-    검증 질문: 과열 익절이 칼마를 올리나, 아니면 강세장 상승만 놓치나."""
+    """[과열 익절 견고성 검증] 이격익절의 임계값 세트를 흔들어 칼마가 평원인지(강건) 스파이크인지(과적합) 확인.
+    여러 임계값 세트에서 모두 홀딩(200MA)을 이기면 진짜 효과. TQQQ·SOXL 둘 다 봐야 함."""
     df = df.reset_index(drop=True)
     k = ST.indikit(df)
     close, sma200 = k["close"], k["sma200"]
     warm = sma200.isna().to_numpy()
     above = (close > sma200).to_numpy()
-    disp = (close / sma200 - 1.0).to_numpy()          # 200일선 이격도
+    disp = (close / sma200 - 1.0).to_numpy()
     rsi = I.rsi(close, 14).to_numpy()
     idx = df.index
 
@@ -331,25 +330,27 @@ def exit_research(df, cost_bps=5.0, expense=0.0095):
         s[pd.Series(warm, index=idx)] = np.nan
         return s
 
-    def trim_disp(d):
-        return np.where(d > 0.45, 0.7, np.where(d > 0.30, 0.8, np.where(d > 0.15, 0.9, 1.0)))
-    def trim_rsi(r):
-        return np.where(r > 85, 0.7, np.where(r > 78, 0.8, np.where(r > 70, 0.9, 1.0)))
+    def trim_by(x, t1, t2, t3):   # 3단계 익절: t1↑→0.9, t2↑→0.8, t3↑→0.7
+        return np.where(x > t3, 0.7, np.where(x > t2, 0.8, np.where(x > t1, 0.9, 1.0)))
 
-    hold = np.where(above, 1.0, 0.0)
-    e_disp = np.where(above, trim_disp(disp), 0.0)
-    e_rsi = np.where(above, trim_rsi(rsi), 0.0)
-    e_both = np.where(above, np.maximum(trim_disp(disp), trim_rsi(rsi)), 0.0)
-
-    variants = {
-        "홀딩(200MA)": E(hold),
-        "이격익절": E(e_disp),
-        "RSI익절": E(e_rsi),
-        "이격+RSI합의": E(e_both),
+    # 이격익절 임계값 세트들(공격적→보수적). 평원이면 강건.
+    disp_sets = {
+        "홀딩(200MA)": None,
+        "이격 10/22/35": (0.10, 0.22, 0.35),
+        "이격 15/30/45": (0.15, 0.30, 0.45),   # 기존 채택 후보
+        "이격 20/35/50": (0.20, 0.35, 0.50),
+        "이격 25/42/60": (0.25, 0.42, 0.60),
+        "RSI 70/78/85": "rsi",                  # 비교용(RSI 기준)
     }
     out = {}
-    for nm, e in variants.items():
-        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+    for nm, st in disp_sets.items():
+        if st is None:
+            e = np.where(above, 1.0, 0.0)
+        elif st == "rsi":
+            e = np.where(above, trim_by(rsi, 70, 78, 85), 0.0)
+        else:
+            e = np.where(above, trim_by(disp, *st), 0.0)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(dtype=float), cost_bps, expense)
         out[nm] = _metrics(sr, pos, turn)
     return out
 
