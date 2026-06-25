@@ -154,18 +154,20 @@ def robustness(df, cost_bps=5.0, expense=0.0095):
     df = df.reset_index(drop=True)
     tvs = ST.RANGES["target_vol"]; acs = ST.RANGES["acute_strength"]
     k_all = ST.indikit(df)                      # 지표 1회 계산 후 격자 전체 재사용
-    grid = []
+    z_sh, z_cal = [], []
     for ac in acs:
-        row = []
+        rs, rc = [], []
         for tv in tvs:
             e = ST.exposure_core(df, {"target_vol": tv, "acute_strength": ac}, k=k_all).to_numpy(dtype=float)
             r, _, _, _ = _exec_returns(df, e, cost_bps, expense)
-            row.append(round(_sharpe(r), 2))
-        grid.append(row)
-    flat = [v for row in grid for v in row]
+            m = _metrics(r)
+            rs.append(round(m["sharpe"], 2)); rc.append(round(m["calmar"], 2))
+        z_sh.append(rs); z_cal.append(rc)
+    flat = [v for row in z_sh for v in row]
+    flatc = [v for row in z_cal for v in row]
     return {"x_label": "target_vol", "x": tvs, "y_label": "acute_strength", "y": acs,
-            "z": grid, "max": max(flat), "min": min(flat),
-            "spread": round(max(flat) - min(flat), 2)}
+            "z": z_sh, "max": max(flat), "min": min(flat), "spread": round(max(flat) - min(flat), 2),
+            "z_calmar": z_cal, "max_c": max(flatc), "min_c": min(flatc)}
 
 
 # ── 몬테카를로: 블록 부트스트랩으로 최대낙폭/최종수익 분포 ──

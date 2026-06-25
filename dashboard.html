@@ -1333,11 +1333,15 @@ function renderQuant(d){
     }else document.getElementById('qWf').innerHTML="<div class='btnote' style='color:var(--caution)'>"+((wf&&wf.error)||'워크포워드 불가')+"</div>";
     const rb=d.robustness;
     if(rb){
-      let h="<table class='heat'><tr><th class='hcorner'>acute＼tv</th>";
-      rb.x.forEach(x=>h+="<th>"+x+"</th>"); h+="</tr>";
-      rb.z.forEach((row,i)=>{h+="<tr><th>"+rb.y[i]+"</th>";
-        row.forEach(v=>{h+="<td style='background:"+heatColor(v,rb.min,rb.max)+"'>"+v.toFixed(2)+"</td>";}); h+="</tr>";});
-      h+="</table><div class='btnote'>샤프 범위 "+rb.min.toFixed(2)+"~"+rb.max.toFixed(2)+" (폭 "+rb.spread.toFixed(2)+") — 폭이 좁고 색이 고를수록 견고(평원).</div>";
+      const mkHeat=(z,lo,hi,label)=>{
+        let h="<div class='btnote' style='margin:6px 0 3px'>"+label+"</div><table class='heat'><tr><th class='hcorner'>acute＼tv</th>";
+        rb.x.forEach(x=>h+="<th>"+x+"</th>"); h+="</tr>";
+        z.forEach((row,i)=>{h+="<tr><th>"+rb.y[i]+"</th>";
+          row.forEach(v=>{h+="<td style='background:"+heatColor(v,lo,hi)+"'>"+v.toFixed(2)+"</td>";}); h+="</tr>";});
+        h+="</table>"; return h;};
+      let h=mkHeat(rb.z,rb.min,rb.max,"샤프");
+      if(rb.z_calmar)h+=mkHeat(rb.z_calmar,rb.min_c,rb.max_c,"칼마(수익/MDD) — 우리 목표 지표");
+      h+="<div class='btnote'>현재 target_vol=45 가설. 칼마가 특정 칸에서만 튀면(스파이크) 과적합 신호, 넓게 고르면(평원) 견고. 색 고를수록 견고.</div>";
       document.getElementById('qRob').innerHTML=h;
     }
     const mc=d.monte_carlo;
