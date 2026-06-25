@@ -296,7 +296,20 @@ def entry_research(df, cost_bps=5.0, expense=0.0095):
     for nm, e in variants.items():
         sr, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
         out[nm] = _metrics(sr, pos, turn)
-    return out
+
+    # ── 휩쏘 진단: 200선 교차/년 + (분할10일 − 즉시) 칼마 차이 ──
+    act = ~warm
+    av = above[act]
+    crossings = int(np.sum(av[1:] != av[:-1])) if av.size > 1 else 0
+    years = max(0.1, av.size / 252.0)
+    cross_yr = round(crossings / years, 1)
+    ci = out["즉시(200MA)"]["calmar"]; cs = out["분할10일"]["calmar"]
+    delta = round(cs - ci, 2)
+    rec = "분할 유리" if delta >= 0.05 else ("즉시 유리" if delta <= -0.05 else "차이 미미")
+    diag = {"cross_yr": cross_yr, "calmar_즉시": ci, "calmar_분할10": cs,
+            "delta": delta, "recommend": rec,
+            "mdd_즉시": out["즉시(200MA)"]["mdd"], "mdd_분할10": out["분할10일"]["mdd"]}
+    return out, diag
 
 
 def analyze(df, cost_bps=5.0, expense=0.0095):
@@ -308,8 +321,9 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     bl = baselines(df, p, cost_bps, expense)
     rp = regime_perf(df, p, cost_bps, expense)
     roll = rolling_series(df, p, cost_bps, expense)
-    mar = entry_research(df, cost_bps, expense)
+    mar, entry_diag = entry_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
+            "entry_diag": entry_diag,
             "cost_bps": cost_bps, "expense": expense}

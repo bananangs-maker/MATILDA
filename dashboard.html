@@ -1311,8 +1311,20 @@ function renderQuant(d){
           +"<td style='color:var(--faint)'>"+(m.turnover_yr!=null?m.turnover_yr:'—')+"</td></tr>";};
       let h="<table class='wftab cmptab'><tr><th>변형</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th><th>연회전율</th></tr>";
       names.forEach(n=>h+=rowOf(n));
-      h+="</table><div class='btnote'>기준=<b>즉시(200MA)</b>(칼마 "+baseCal+"). 분할/확인이 칼마↑·MDD↓·회전율↓면 휩쏘 방어 효과. 단 추세장 상승을 놓쳐 총수익이 줄 수 있음. <b>TQQQ·SOXL 둘 다</b> 일관되게 나아야 채택. ★=최고 칼마.</div>";
-      document.getElementById('qMaR').innerHTML=h;
+      h+="</table><div class='btnote'>기준=<b>즉시(200MA)</b>(칼마 "+baseCal+"). 분할/확인이 칼마↑·MDD↓·회전율↓면 휩쏘 방어 효과. 단 추세장 상승을 놓쳐 총수익이 줄 수 있음. ★=최고 칼마.</div>";
+      // 휩쏘 진단 배너 (표 위) — 가설: 교차 잦을수록 분할 유리
+      let banner="";
+      const dg=d.entry_diag;
+      if(dg){
+        const col=dg.recommend.indexOf('분할')>=0?'var(--go)':dg.recommend.indexOf('즉시')>=0?'var(--accent)':'var(--muted)';
+        banner="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11.5px'>"
+          +"<b>휩쏘 진단</b> &nbsp; 200선 교차 <b style='font-family:var(--mono)'>"+dg.cross_yr+"회/년</b>"
+          +" &nbsp;·&nbsp; 즉시 칼마 "+dg.calmar_즉시+" (MDD "+dg.mdd_즉시+"%)"
+          +" &nbsp;→&nbsp; 분할10일 칼마 "+dg.calmar_분할10+" (MDD "+dg.mdd_분할10+"%)"
+          +" &nbsp;·&nbsp; 차이 <b style='color:"+col+"'>"+(dg.delta>=0?'+':'')+dg.delta+" "+dg.recommend+"</b>"
+          +"<div style='color:var(--faint);font-size:10px;margin-top:4px'>가설: 교차/년이 높은(휩쏘 잦은) 종목일수록 '분할 유리'가 나와야 함. 여러 레버리지 종목으로 모아 패턴 확인 — 점 2개로는 단정 금물.</div></div>";
+      }
+      document.getElementById('qMaR').innerHTML=banner+h;
     }
     // 단순 베이스라인 비교
     const bl=d.baselines;
