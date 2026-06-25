@@ -1314,11 +1314,21 @@ function renderQuant(d){
       h+="</table><div class='btnote'>기준=<b>즉시(200MA)</b>(칼마 "+baseCal+"). 분할/확인이 칼마↑·MDD↓·회전율↓면 휩쏘 방어 효과. 단 추세장 상승을 놓쳐 총수익이 줄 수 있음. ★=최고 칼마.</div>";
       // 휩쏘 진단 배너 (표 위) — 가설: 교차 잦을수록 분할 유리
       let banner="";
-      const dg=d.entry_diag;
+      let dg=d.entry_diag;
+      // 폴백: quant.py가 옛 버전이라 entry_diag가 없으면 표 데이터로 차이만 계산
+      if(!dg && mar['즉시(200MA)'] && mar['분할10일']){
+        const im=mar['즉시(200MA)'], sp=mar['분할10일'];
+        const dl=Math.round((sp.calmar-im.calmar)*100)/100;
+        dg={cross_yr:null, calmar_즉시:im.calmar, calmar_분할10:sp.calmar, delta:dl,
+            mdd_즉시:im.mdd, mdd_분할10:sp.mdd,
+            recommend: dl>=0.05?'분할 유리':(dl<=-0.05?'즉시 유리':'차이 미미')};
+      }
       if(dg){
         const col=dg.recommend.indexOf('분할')>=0?'var(--go)':dg.recommend.indexOf('즉시')>=0?'var(--accent)':'var(--muted)';
+        const cross = dg.cross_yr!=null ? ("<b style='font-family:var(--mono)'>"+dg.cross_yr+"회/년</b>")
+                                        : "<span style='color:var(--warn,#e0a030)'>— (quant.py 업데이트 필요)</span>";
         banner="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11.5px'>"
-          +"<b>휩쏘 진단</b> &nbsp; 200선 교차 <b style='font-family:var(--mono)'>"+dg.cross_yr+"회/년</b>"
+          +"<b>휩쏘 진단</b> &nbsp; 200선 교차 "+cross
           +" &nbsp;·&nbsp; 즉시 칼마 "+dg.calmar_즉시+" (MDD "+dg.mdd_즉시+"%)"
           +" &nbsp;→&nbsp; 분할10일 칼마 "+dg.calmar_분할10+" (MDD "+dg.mdd_분할10+"%)"
           +" &nbsp;·&nbsp; 차이 <b style='color:"+col+"'>"+(dg.delta>=0?'+':'')+dg.delta+" "+dg.recommend+"</b>"
@@ -1390,7 +1400,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q2_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q3_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1405,7 +1415,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q2_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q3_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
