@@ -68,13 +68,13 @@
   .ep-calc input{background:var(--panel2);border:1px solid var(--border);color:var(--ink);border-radius:3px;padding:4px 7px;font-family:var(--mono)}
   .card.exitplan{border-color:var(--accent)}
   .enginerow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start}
-  .topband2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start}
+  .topband2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:stretch}
   @media(max-width:900px){.enginerow,.topband2{grid-template-columns:1fr}}
   .eng-panel{border:1.5px solid var(--border)}
-  @keyframes engPos{50%{border-color:#2bd07a}}
-  @keyframes engNeg{50%{border-color:#ff3b46}}
-  .eng-panel.pos{animation:engPos 1.5s ease-in-out infinite;border-color:#2bd07a}
-  .eng-panel.neg{animation:engNeg 1.5s ease-in-out infinite;border-color:#ff3b46}
+  @keyframes engPos{0%,100%{border-color:var(--border)}50%{border-color:#2bd07a}}
+  @keyframes engNeg{0%,100%{border-color:var(--border)}50%{border-color:#ff3b46}}
+  .eng-panel.pos{animation:engPos 1.5s ease-in-out infinite}
+  .eng-panel.neg{animation:engNeg 1.5s ease-in-out infinite}
   .eng200-status{font-size:18px;font-weight:700;margin:6px 0 2px}
   .eng200-sub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
   .eng200-row{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted)}
@@ -461,7 +461,15 @@
       </div>
       <div class="card eng-panel" id="eng200">
         <div class="lab">200MA engine <span class="hint">검증된 코어 · 200선 홀딩/현금 + 과열 익절</span></div>
-        <div id="eng200Body"><div class="none">차트 로딩 후 표시됩니다</div></div>
+        <div style="display:flex;align-items:center;gap:13px">
+          <div id="eng200Face" style="width:56px;height:54px;flex:none"></div>
+          <div style="flex:1;min-width:0">
+            <div class="call" id="eng200Call">—</div>
+            <div class="detail" id="eng200Detail"></div>
+          </div>
+        </div>
+        <div class="sizebar"><div class="sizefill" id="eng200Fill" style="width:0%"></div></div>
+        <div id="eng200Extra"></div>
       </div>
     </div>
     <div class="topband2">
@@ -479,8 +487,7 @@
       </div>
     </div>
     <div class="card exitplan" id="exitPlanCard" style="margin-bottom:10px">
-      <div class="lab">과열 분할 익절 플랜 <span class="hint">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span>
-        <span style="float:right;font-size:9.5px;color:var(--faint)">보유수량 입력 시 익절 주수 계산</span></div>
+      <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span></div>
       <div id="exitPlanBody"></div>
     </div>
     <div id="masonbody">
@@ -1820,30 +1827,37 @@ function renderExitPlan(x){
   if(inp){inp.oninput=()=>{state.exitShares=inp.value;upd();};upd();}
 }
 function renderEng200(x){
-  const box=document.getElementById('eng200Body'), card=document.getElementById('eng200');
-  if(!box||!card)return;
+  const card=document.getElementById('eng200'), face=document.getElementById('eng200Face'),
+        call=document.getElementById('eng200Call'), det=document.getElementById('eng200Detail'),
+        fill=document.getElementById('eng200Fill'), extra=document.getElementById('eng200Extra');
+  if(!card||!face)return;
   card.classList.remove('pos','neg');
-  if(!x){box.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";return;}
+  const GREEN='#2bd07a', RED='#E0322B';
+  if(!x){call.textContent='—';det.textContent='';face.innerHTML=faceSVG(0.3,'#888');fill.style.width='0%';extra.innerHTML='';return;}
   if(!x.above200){
-    card.classList.add('neg');   // 현금 구간 = 빨강 점멸
-    box.innerHTML="<div class='eng200-status' style='color:"+C.down+"'>🔴 현금 구간</div>"
-      +"<div class='eng200-sub'>200일선 아래 — 보유 대상 아님. 떨어지는 칼날 잡지 말 것. <b>재돌파 확인 후 진입.</b></div>"
-      +"<div class='eng200-row'><span>현재가 <b>$"+x.price+"</b></span>"+(x.sma200?"<span>200일선 <b>$"+x.sma200+"</b></span>":"")
-      +(x.disparity!=null?"<span>이격도 <b style='color:"+C.down+"'>"+x.disparity+"%</b></span>":"")+"</div>";
+    card.classList.add('neg');                         // 현금 = 빨강 점멸
+    face.innerHTML=faceSVG(0.85,RED);                  // 붉은 매화
+    call.innerHTML="<span style='color:"+RED+"'>현금 구간</span>";
+    det.textContent="200일선 아래 — 보유 대상 아님. 재돌파 확인 후 진입.";
+    fill.style.width='0%'; fill.style.background=RED; fill.textContent='0%';
+    extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'><span>현재가 $"+x.price+"</span>"
+      +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
+      +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>";
     return;
   }
-  card.classList.add('pos');     // 홀딩 구간 = 초록 점멸
+  card.classList.add('pos');                           // 홀딩 = 초록 점멸
+  face.innerHTML=faceSVG(0.9,GREEN);                   // 초록 매화
   const tgt=x.target_pct, trimmed=x.trim_total_pct||0;
+  call.innerHTML="<span style='color:"+GREEN+"'>홀딩 구간</span> · 권장 비중 "+tgt+"%";
+  det.textContent="200일선 위 — 추세 유효. 흔들리지 말고 보유 유지 (보유 "+x.days_above+"일째)"
+    +(trimmed>0?" · 과열 익절 "+trimmed+"% 진행":"");
+  fill.style.width=tgt+'%'; fill.style.background=trimmed>0?'#E0A458':GREEN; fill.textContent=tgt+'%';
   let entry="";
-  if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+C.go+"'>🟢 진입 신호 — 최근 200선 재돌파. 추세 전환 확인됨, 진입 구간.</div>";
-  box.innerHTML="<div class='eng200-status' style='color:"+C.go+"'>🟢 홀딩 구간</div>"
-    +"<div class='eng200-sub'>200일선 위 — 추세 유효. 흔들리지 말고 <b>보유 유지</b>. (보유 "+x.days_above+"일째)</div>"
-    +"<div class='eng200-row'>"
-    +"<span>현재가 <b>$"+x.price+"</b></span><span>200일선 <b>$"+x.sma200+"</b></span>"
-    +"<span>이격도 <b style='color:"+(x.disparity>=20?C.amber:C.go)+"'>+"+x.disparity+"%</b></span>"
-    +"<span>권장 보유 <b style='color:"+(trimmed>0?C.amber:C.go)+"'>"+tgt+"%</b>"+(trimmed>0?" (익절 "+trimmed+"%)":"")+"</span>"
-    +"</div>"+entry
-    +"<div class='btnote' style='margin-top:6px'>아래 <b>과열 분할 익절 플랜</b>에서 구체적 익절 주수·가격 확인.</div>";
+  if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:8px'>● 진입 신호 — 최근 200선 재돌파. 추세 전환 확인, 진입 구간.</div>";
+  extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'>"
+    +"<span>현재가 $"+x.price+"</span><span>200일선 $"+x.sma200+"</span>"
+    +"<span style='color:"+(x.disparity>=20?'#E0A458':GREEN)+"'>이격 +"+x.disparity+"%</span></div>"+entry
+    +"<div class='btnote' style='margin-top:6px'>구체적 익절 주수·가격은 아래 <b>과열 분할 익절 플랜</b> 참고.</div>";
 }
 function renderEngine(e){
   if(!e)return;
@@ -2051,10 +2065,10 @@ function renderFundamentals(f){
   ex.innerHTML=html;
 }
 
-/* ---------- 로고: 일본 문장(家紋) 스타일 매화 꽃 문양 — 레드. m=진입 비중(0~1) → 밝기 ---------- */
-function faceSVG(m){
+/* ---------- 로고: 일본 문장(家紋) 스타일 매화 꽃 문양. m=비중/밝기(0~1), col=색상 ---------- */
+function faceSVG(m, col){
   m=Math.max(0,Math.min(1,m));
-  const red='#E0322B', cx=32, cy=32, R=12.5, pr=9;
+  const red=col||'#E0322B', cx=32, cy=32, R=12.5, pr=9;
   const op=(0.45+0.55*m).toFixed(2);
   let petals='', stamens='';
   for(let i=0;i<5;i++){
