@@ -641,6 +641,8 @@
     <div id="qExit"></div>
     <div class="qsub2">③ 대세하락 검증 <span class="hint">역배열(50<200) 장기하락에서 200MA 재돌파 재진입이 휩쏘 손해인지, 정배열/기울기 필터 관망이 나은지 — QQQ·SPY로 2000·2008 약세장 포함 검증</span></div>
     <div id="qBear"></div>
+    <div class="qsub2">④ 익절 비율·재진입 검증 <span class="hint">단계당 익절 5/10/15/20% 중 칼마 최적은? 이격 회복 시 재진입을 같은 임계(휩쏘) vs 여유(히스테리시스) 어느 쪽이 나은지. 회전율로 휩쏘 비용도 확인</span></div>
+    <div id="qReentry"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1450,6 +1452,28 @@ function renderQuant(d){
       h+="<div class='btnote' style='margin-top:6px'>가설: 역배열에서 <b>정배열/기울기 필터</b>(관망)가 200MA 단독보다 역배열 MDD를 줄이면 채택. 단 전체 칼마도 함께 봐야(필터가 상승장 수익을 너무 깎으면 안 됨). QQQ·SPY 둘 다 일관돼야 함.</div>";
       document.getElementById('qBear').innerHTML=h;
     }
+    // ④ 익절 비율·재진입 검증
+    const rr=d.reentry_research;
+    if(rr){
+      const baseCal=rr.base?rr.base.calmar:0;
+      const tbl=(obj,col1)=>{
+        let best=null,bc=-1e9; Object.keys(obj).forEach(n=>{if(obj[n].calmar>bc){bc=obj[n].calmar;best=n;}});
+        let s="<table class='wftab cmptab'><tr><th>"+col1+"</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>회전/년</th></tr>";
+        s+="<tr style='color:var(--faint)'><td>홀딩(200MA)</td><td>"+(rr.base.total>=0?'+':'')+rr.base.total+"%</td><td>"+rr.base.sharpe+"</td><td class='neg'>"+rr.base.mdd+"%</td><td>"+rr.base.calmar+"</td><td>—</td></tr>";
+        Object.keys(obj).forEach(n=>{const m=obj[n];const win=n===best;const beat=m.calmar>baseCal;
+          s+="<tr"+(win?" style='background:var(--accent-soft)'":"")+"><td>"+n+(win?" ★":"")+"</td>"
+            +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td><td>"+m.sharpe+"</td>"
+            +"<td class='neg'>"+m.mdd+"%</td><td"+(beat?" style='color:var(--go);font-weight:600'":"")+">"+m.calmar+"</td>"
+            +"<td style='color:var(--faint)'>"+m.turnover+"</td></tr>";});
+        return s+"</table>";
+      };
+      let h="<div class='btnote' style='margin:2px 0'>(A) 단계당 익절 비율 — 임계 20/35/50 고정, 재진입=같은 임계</div>";
+      h+=tbl(rr.trim_sweep,"익절 비율");
+      h+="<div class='btnote' style='margin:8px 0 2px'>(B) 이격 회복 시 재진입 방식 — 익절 10% 고정. 여유클수록 휩쏘↓(회전↓)이나 재진입 늦음</div>";
+      h+=tbl(rr.reentry_sweep,"재진입 방식");
+      h+="<div class='btnote' style='margin-top:6px'>칼마가 평원(다 비슷)이면 비율은 둔감 → 행동·심리 편한 값 선택 가능. 특정값만 튀면 과적합 의심. 회전/년이 높을수록 매매 잦음(휩쏘·세금↑). <b>재진입은 이미 백테스트에 반영됨</b>(이격 회복 시 비중 자동 복원) — 검증된 알파의 일부.</div>";
+      document.getElementById('qReentry').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1510,11 +1534,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q6_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q7_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1529,7 +1553,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q6_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q7_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -1909,6 +1933,7 @@ function renderEng200(x){
   fill.style.width=tgt+'%'; fill.style.background=trimmed>0?'#E0A458':GREEN; fill.textContent=tgt+'%';
   let entry="";
   if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:8px'>● 진입 신호 — 최근 200선 재돌파. 추세 전환 확인, 진입 구간.</div>";
+  else if(x.reentry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:8px'>● 재진입 신호 — 과열(이격) 해소. 익절했던 비중 되넣어 100% 복원 구간.</div>";
   extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'>"
     +"<span>현재가 $"+x.price+"</span><span>200일선 $"+x.sma200+"</span>"
     +"<span style='color:"+(x.disparity>=20?'#E0A458':GREEN)+"'>이격 +"+x.disparity+"%</span></div>"+entry

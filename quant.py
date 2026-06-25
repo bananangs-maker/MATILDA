@@ -355,6 +355,62 @@ def exit_research(df, cost_bps=5.0, expense=0.0095):
     return out
 
 
+def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
+    """[익절 비율·재진입 검증] (A) 단계당 익절 비율(5/10/15/20%) 중 칼마 최적은?
+    (B) 이격 회복 시 재진입을 '같은 임계'(휩쏘 위험) vs '히스테리시스(여유)' 중 뭐가 나은가.
+    임계는 20/35/50 고정. TQQQ·SOXL 둘 다 봐야 함. 회전율(turnover)로 휩쏘 비용도 확인."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index
+    TH = (0.20, 0.35, 0.50)
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def exposure(disp_arr, above_arr, cut, margin):
+        """단계 익절+재진입(히스테리시스). cut=단계당 익절비율, margin=재진입 여유(이격 %p).
+        level=적용된 익절 단계 수(0~3). 이격이 TH[level] 위로↑면 익절(level+1),
+        TH[level-1]-margin 아래로↓면 재진입(level-1)."""
+        n = len(disp_arr); expo = np.zeros(n); level = 0
+        for i in range(n):
+            d = disp_arr[i]
+            if not above_arr[i]:
+                expo[i] = 0.0; level = 0; continue
+            # 익절: 다음 임계 위로 올라가면 단계 상승
+            while level < 3 and d > TH[level]:
+                level += 1
+            # 재진입: 직전 임계 - margin 아래로 내려오면 단계 하강
+            while level > 0 and d < (TH[level - 1] - margin):
+                level -= 1
+            expo[i] = max(0.0, 1.0 - cut * level)
+        return expo
+
+    out = {"base": {}, "trim_sweep": {}, "reentry_sweep": {}}
+    # 기준: 홀딩(200MA)
+    sr, pos, turn, _ = _exec_returns(df, E(np.where(above, 1.0, 0.0)).to_numpy(float), cost_bps, expense)
+    out["base"] = _metrics(sr, pos, turn)
+    # (A) 익절 비율 sweep (재진입=같은 임계, margin=0)
+    for cut in (0.05, 0.10, 0.15, 0.20):
+        e = exposure(disp, above, cut, 0.0)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
+        out["trim_sweep"][f"{int(cut*100)}%씩"] = m
+    # (B) 재진입 여유(히스테리시스) sweep (익절=10% 고정)
+    for margin in (0.0, 0.05, 0.10):
+        e = exposure(disp, above, 0.10, margin)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
+        lbl = "같은 임계(여유0)" if margin == 0 else f"여유 {int(margin*100)}%p"
+        out["reentry_sweep"][lbl] = m
+    return out
+
+
 def bear_research(df, cost_bps=5.0, expense=0.0095):
     """[대세하락 검증] 역배열(50<200) 장기하락에서 '200MA 재돌파 재진입'이 휩쏘로 손해인지,
     '정배열/200기울기 필터로 관망'이 나은지 검증. 전체 히스토리(2000~ 약세장 포함) 필요.
@@ -423,9 +479,11 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     roll = rolling_series(df, p, cost_bps, expense)
     mar, entry_diag = entry_research(df, cost_bps, expense)
     exitr = exit_research(df, cost_bps, expense)
+    reentry = exit_reentry_research(df, cost_bps, expense)
     bearr = bear_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
-            "entry_diag": entry_diag, "exit_research": exitr, "bear_research": bearr,
+            "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
+            "bear_research": bearr,
             "cost_bps": cost_bps, "expense": expense}

@@ -114,6 +114,12 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             for v in reversed(above_s.tolist()):
                 if v: days_above += 1
                 else: break
+        # 재진입 신호: 최근 10봉 내 과열(이격>20%)로 익절했다가 지금 이격이 그 아래로 회복 → 덜어낸 비중 되넣기 구간
+        reentry_signal = False
+        if above200:
+            disp_s = (cl_s / k["sma200"] - 1.0)
+            recent = disp_s.iloc[-11:-1] if len(disp_s) > 11 else disp_s.iloc[:-1]
+            reentry_signal = bool((recent > 0.20).any() and disp < 0.20 and disp == disp)
         target = 1.0
         triggered = 0
         steps = []
@@ -138,12 +144,14 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             "steps": steps,
             "stages_triggered": triggered,
             "entry_signal": bool(entry_signal),
+            "reentry_signal": bool(reentry_signal),
             "days_above": int(days_above),
         }
     else:
         exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
                      "disparity": None, "target_pct": None, "trim_total_pct": None,
-                     "steps": [], "stages_triggered": 0}
+                     "steps": [], "stages_triggered": 0,
+                     "entry_signal": False, "reentry_signal": False, "days_above": 0}
 
     return {
         "risk": risk, "risk_label": rlabel, "components": {k_: round(comp[k_] * 100) for k_ in comp},
