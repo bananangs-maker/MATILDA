@@ -257,27 +257,42 @@ def rolling_series(df, p, cost_bps=5.0, expense=0.0095, win=63):
 
 
 def ma_research(df, cost_bps=5.0, expense=0.0095):
-    """[1단계 연구] 200MA 골격 + 추세약화 방어 변형들을 200MA 단독과 비교.
-    레버리지 ETF는 200일선 아래=현금이 핵심. 위에서 '얼마나/언제 줄일지'만 변형."""
+    """[1단계 연구] 200MA 골격에 (a)빠른 방어, (b)200선 아래 비중을 조합해 비교.
+    핵심 질문: 위에서 빠른 신호로 방어가 되는가 / 아래는 0%가 답인가 소량 유지가 답인가.
+    회전율(휩쏘 비용)도 함께 본다."""
     df = df.reset_index(drop=True)
     k = ST.indikit(df)
-    close, sma50, sma200, adx = k["close"], k["sma50"], k["sma200"], k["adx"]
+    close, sma200, rvol = k["close"], k["sma200"], k["rvol"]
     ret1, dd20 = k["ret1"], k["dd20"]
     warm = sma200.isna()
-    above = (close > sma200)
-    align = (sma50 > sma200)
+    above = (close > sma200).to_numpy()
     idx = df.index
+    # 빠른 방어 신호(가격/변동성 기반, MA크로스보다 빠름)
+    crash = ((ret1 <= -8) | (dd20 <= -15)).to_numpy()                 # 급락
+    rvmed = rvol.rolling(200, min_periods=60).median()
+    volspike = (rvol > rvmed * 1.5).to_numpy()                        # 변동성 급등
 
     def E(arr):
         s = pd.Series(arr, index=idx, dtype=float); s[warm] = np.nan; return s
 
+    def build(below, defense):
+        up = np.full(len(df), 1.0)
+        if defense == "crash":
+            up = np.where(crash, 0.30, 1.0)
+        elif defense == "vol":
+            up = np.where(volspike, 0.50, 1.0)
+        elif defense == "both":
+            up = np.where(crash, 0.30, np.where(volspike, 0.50, 1.0))
+        return E(np.where(above, up, below))
+
     variants = {
-        "200MA 단독": E(np.where(above, 1.0, 0.0)),
-        "정배열축소50": E(np.select([above & align, above], [1.0, 0.5], 0.0)),
-        "정배열축소65": E(np.select([above & align, above], [1.0, 0.65], 0.0)),
-        "ADX약화축소": E(np.select([above & align & (adx >= 20), above], [1.0, 0.5], 0.0)),
-        "급락일시회피": E(np.where(above & ((ret1 <= -8) | (dd20 <= -15)), 0.3,
-                                   np.where(above, 1.0, 0.0))),
+        "200MA(아래0)": build(0.0, None),
+        "아래10%": build(0.10, None),
+        "아래15%": build(0.15, None),
+        "급락회피+아래0": build(0.0, "crash"),
+        "급락회피+아래10": build(0.10, "crash"),
+        "변동성차단+아래0": build(0.0, "vol"),
+        "급락+변동성+아래10": build(0.10, "both"),
     }
     out = {}
     for nm, e in variants.items():
