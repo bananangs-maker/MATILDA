@@ -107,13 +107,16 @@ def regime_series(k: dict, p: dict):
     return tf, ranging, above200, align_up
 
 
-def exposure_core(df: pd.DataFrame, p: dict = None) -> pd.Series:
+def exposure_core(df: pd.DataFrame, p: dict = None, k: dict = None) -> pd.Series:
     """
     코어 포지션 비중(0~maxcap, 분수) 시계열 — 가격/거래량만 사용, 미래참조 없음.
     ★ 라이브 스냅샷과 백테스트가 모두 이 함수를 호출한다 (단일 진실원). ★
+    k(indikit 결과)를 넘기면 재계산을 생략한다 — 격자 탐색(워크포워드/견고성)에서 지표는 파라미터와
+    무관하므로 한 번만 계산해 재사용하면 연산이 수십 배 빨라진다.
     """
     p = {**PARAMS, **(p or {})}
-    k = indikit(df)
+    if k is None:
+        k = indikit(df)
     comp = _components(k, p)
     tf, ranging, _, _ = regime_series(k, p)
     vt = (p["target_vol"] / k["rvol"]).clip(p["vt_floor"], p["vt_cap"]).fillna(0.5)

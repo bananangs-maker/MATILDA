@@ -119,10 +119,12 @@ def walk_forward(df, n_folds=4, cost_bps=5.0, expense=0.0095):
         oos_end = min(fold * (f + 2), N)
         is_df = df.iloc[:is_end]
         oos_df = df.iloc[max(0, is_end - 220):oos_end]   # 지표 워밍업 위해 약간 겹쳐 로드
-        # 인샘플 최적화 (Sharpe 최대)
+        # 인샘플 최적화 (Sharpe 최대) — 지표는 파라미터 무관하므로 1회만 계산해 재사용
+        k_is = ST.indikit(is_df)
         best, best_sh = None, -1e9
         for tv, ac in grid:
-            r, _, _, _ = _strat_returns(is_df, {"target_vol": tv, "acute_strength": ac}, cost_bps, expense)
+            e = ST.exposure_core(is_df, {"target_vol": tv, "acute_strength": ac}, k=k_is).to_numpy(dtype=float)
+            r, _, _, _ = _exec_returns(is_df, e, cost_bps, expense)
             sh = _sharpe(r)
             if sh > best_sh:
                 best_sh, best = sh, (tv, ac)
@@ -151,11 +153,13 @@ def walk_forward(df, n_folds=4, cost_bps=5.0, expense=0.0095):
 def robustness(df, cost_bps=5.0, expense=0.0095):
     df = df.reset_index(drop=True)
     tvs = ST.RANGES["target_vol"]; acs = ST.RANGES["acute_strength"]
+    k_all = ST.indikit(df)                      # 지표 1회 계산 후 격자 전체 재사용
     grid = []
     for ac in acs:
         row = []
         for tv in tvs:
-            r, _, _, _ = _strat_returns(df, {"target_vol": tv, "acute_strength": ac}, cost_bps, expense)
+            e = ST.exposure_core(df, {"target_vol": tv, "acute_strength": ac}, k=k_all).to_numpy(dtype=float)
+            r, _, _, _ = _exec_returns(df, e, cost_bps, expense)
             row.append(round(_sharpe(r), 2))
         grid.append(row)
     flat = [v for row in grid for v in row]
