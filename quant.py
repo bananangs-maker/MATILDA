@@ -17,6 +17,7 @@ quant.py — 퀀트 백테스트/리서치 레이어
 import numpy as np
 import pandas as pd
 import strategy as ST
+import indicators as I
 
 ANN = 252
 
@@ -312,6 +313,47 @@ def entry_research(df, cost_bps=5.0, expense=0.0095):
     return out, diag
 
 
+def exit_research(df, cost_bps=5.0, expense=0.0095):
+    """[과열 익절 연구] 200선 위 홀딩 기본. 과열일수록 일부만 덜어냄(최대 30%, 핵심 70% 유지).
+    원칙: 전량매도 금지(상승 못 버팀 약점 재발 방지). 목표=칼마. 과열=200일선 이격도·RSI(기존 지표).
+    검증 질문: 과열 익절이 칼마를 올리나, 아니면 강세장 상승만 놓치나."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()          # 200일선 이격도
+    rsi = I.rsi(close, 14).to_numpy()
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def trim_disp(d):
+        return np.where(d > 0.45, 0.7, np.where(d > 0.30, 0.8, np.where(d > 0.15, 0.9, 1.0)))
+    def trim_rsi(r):
+        return np.where(r > 85, 0.7, np.where(r > 78, 0.8, np.where(r > 70, 0.9, 1.0)))
+
+    hold = np.where(above, 1.0, 0.0)
+    e_disp = np.where(above, trim_disp(disp), 0.0)
+    e_rsi = np.where(above, trim_rsi(rsi), 0.0)
+    e_both = np.where(above, np.maximum(trim_disp(disp), trim_rsi(rsi)), 0.0)
+
+    variants = {
+        "홀딩(200MA)": E(hold),
+        "이격익절": E(e_disp),
+        "RSI익절": E(e_rsi),
+        "이격+RSI합의": E(e_both),
+    }
+    out = {}
+    for nm, e in variants.items():
+        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+    return out
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -322,8 +364,9 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     rp = regime_perf(df, p, cost_bps, expense)
     roll = rolling_series(df, p, cost_bps, expense)
     mar, entry_diag = entry_research(df, cost_bps, expense)
+    exitr = exit_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
-            "entry_diag": entry_diag,
+            "entry_diag": entry_diag, "exit_research": exitr,
             "cost_bps": cost_bps, "expense": expense}

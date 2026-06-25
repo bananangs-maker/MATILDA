@@ -601,6 +601,8 @@
     <div id="qEquity"></div>
     <div class="qsub2">① 분할 진입 연구 <span class="hint">200MA 위=홀딩 골격 고정. 재돌파 시 '한 방 vs 분할', 확인일수를 칼마·MDD·회전율로 비교 — 분할이 휩쏘를 줄이는지 검증</span></div>
     <div id="qMaR"></div>
+    <div class="qsub2">② 과열 익절 연구 <span class="hint">200선 위 홀딩 기본. 과열(이격도·RSI)일수록 일부만 익절(최대 30%, 핵심 70% 유지). 익절이 칼마를 올리나, 강세장 상승만 놓치나</span></div>
+    <div id="qExit"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1336,6 +1338,24 @@ function renderQuant(d){
       }
       document.getElementById('qMaR').innerHTML=banner+h;
     }
+    // ② 과열 익절 연구
+    const ex=d.exit_research;
+    if(ex){
+      const names=Object.keys(ex);
+      const baseCal=ex['홀딩(200MA)']?ex['홀딩(200MA)'].calmar:0;
+      let bestNm=null,bestCal=-1e9; names.forEach(n=>{if(ex[n].calmar>bestCal){bestCal=ex[n].calmar;bestNm=n;}});
+      const rowOf=(nm)=>{const m=ex[nm];const win=nm===bestNm;const beat=m.calmar>baseCal&&nm!=='홀딩(200MA)';
+        return "<tr"+(win?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(win?" ★":"")+(beat?" <span style='color:var(--go)'>↑</span>":"")+"</td>"
+          +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td>"
+          +"<td>"+m.sharpe+"</td><td class='neg'>"+m.mdd+"%</td>"
+          +"<td"+(m.calmar>=baseCal?" style='color:var(--go);font-weight:600'":"")+">"+m.calmar+"</td>"
+          +"<td style='color:var(--faint)'>"+(m.avg_expo!=null?m.avg_expo+'%':'—')+"</td>"
+          +"<td style='color:var(--faint)'>"+(m.turnover_yr!=null?m.turnover_yr:'—')+"</td></tr>";};
+      let h="<table class='wftab cmptab'><tr><th>변형</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th><th>연회전율</th></tr>";
+      names.forEach(n=>h+=rowOf(n));
+      h+="</table><div class='btnote'>기준=<b>홀딩(200MA)</b>(칼마 "+baseCal+"). 익절이 칼마↑(초록·↑)면 가치, 칼마↓면 강세장 상승만 놓친 것. <b>TQQQ·SOXL 둘 다</b> 일관되게 나아야 채택. ★=최고 칼마. (익절은 최대 30%, 핵심 70% 홀딩 유지)</div>";
+      document.getElementById('qExit').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1396,11 +1416,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q3_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q4_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1415,7 +1435,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q3_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q4_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
