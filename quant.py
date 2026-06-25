@@ -256,6 +256,36 @@ def rolling_series(df, p, cost_bps=5.0, expense=0.0095, win=63):
     return {"points": pts, "win": win}
 
 
+def ma_research(df, cost_bps=5.0, expense=0.0095):
+    """[1단계 연구] 200MA 골격 + 추세약화 방어 변형들을 200MA 단독과 비교.
+    레버리지 ETF는 200일선 아래=현금이 핵심. 위에서 '얼마나/언제 줄일지'만 변형."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma50, sma200, adx = k["close"], k["sma50"], k["sma200"], k["adx"]
+    ret1, dd20 = k["ret1"], k["dd20"]
+    warm = sma200.isna()
+    above = (close > sma200)
+    align = (sma50 > sma200)
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float); s[warm] = np.nan; return s
+
+    variants = {
+        "200MA 단독": E(np.where(above, 1.0, 0.0)),
+        "정배열축소50": E(np.select([above & align, above], [1.0, 0.5], 0.0)),
+        "정배열축소65": E(np.select([above & align, above], [1.0, 0.65], 0.0)),
+        "ADX약화축소": E(np.select([above & align & (adx >= 20), above], [1.0, 0.5], 0.0)),
+        "급락일시회피": E(np.where(above & ((ret1 <= -8) | (dd20 <= -15)), 0.3,
+                                   np.where(above, 1.0, 0.0))),
+    }
+    out = {}
+    for nm, e in variants.items():
+        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+    return out
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -265,7 +295,8 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     bl = baselines(df, p, cost_bps, expense)
     rp = regime_perf(df, p, cost_bps, expense)
     roll = rolling_series(df, p, cost_bps, expense)
+    mar = ma_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
-            "baselines": bl, "regime_perf": rp, "rolling": roll,
+            "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "cost_bps": cost_bps, "expense": expense}
