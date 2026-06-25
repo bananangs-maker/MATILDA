@@ -1352,7 +1352,8 @@ function renderRollDD(roll){
 function renderQuant(d){
     const s=d.stats;
     document.getElementById('qPeriod').textContent=state.ticker+' · '+s.period+' · '+s.bars+'봉 · 비용'+s.cost_bps+'bps · 보수'+(s.expense*100).toFixed(2)+'%';
-    document.getElementById('qStats').innerHTML=
+    const noteHtml=(d.meta&&d.meta.note)?"<div class='btnote' style='color:var(--caution);border:1px solid var(--border2);border-radius:3px;padding:6px 9px;margin-bottom:6px'>⚠ "+d.meta.note+"</div>":"";
+    document.getElementById('qStats').innerHTML=noteHtml+
       statCard(s.total,'전략 총수익',true)+statCard(s.bh_total,'매수후보유',true)+
       statCard(s.cagr,'CAGR',true)+statCard(s.sharpe,'샤프',false)+statCard(s.sortino,'소르티노',false)+
       statCard(s.mdd,'전략 MDD',true)+statCard(s.bh_mdd,'보유 MDD',true)+statCard(s.calmar,'칼마',false)+

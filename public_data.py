@@ -199,12 +199,13 @@ def daily_ohlcv(ticker: str, yrange: str = "3y", interval: str = "1day") -> tupl
         osize = {"2y": 520, "3y": 780, "5y": 1300, "10y": 2600, "max": 5000}.get(yrange, 780)
     else:
         osize = 600 if interval == "1week" else 360
-    sources = [("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
-               ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
+    # 클라우드(Render) IP는 Yahoo/Stooq(IP 스크래핑)를 점점 차단함 → 키 기반 Twelve Data를 1순위로.
+    sources = [("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval)),
+               ("Yahoo", lambda: _from_yahoo(ticker, interval, yrange))]
     if interval == "1day":
         sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 일봉만, 전체 히스토리
         if yrange == "max":
-            # 전체 히스토리가 필요할 땐 Stooq를 우선(Twelve Data는 5000봉≈2006에서 잘림 → 2000 누락).
+            # 전체 히스토리(2000~)는 Twelve Data가 5000봉≈2006에서 잘림 → Stooq/Yahoo 우선, Twelve 최후.
             sources = [("Stooq", lambda: _from_stooq(ticker)),
                        ("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
                        ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]

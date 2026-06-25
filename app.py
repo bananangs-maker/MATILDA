@@ -48,7 +48,7 @@ def mock_ohlcv(ticker: str, n: int = 500, interval: str = "1day") -> pd.DataFram
 
 import time
 _CACHE = {}          # ticker -> (df, source, fetched_at)
-_TTL = 600           # 10분 캐시 (무료 API 호출 절약 + 콜드스타트 후 빠른 응답)
+_TTL = 3600          # 1시간 캐시 (키 기반 Twelve Data 일일 한도 절약 — 일봉은 장중 거의 안 변함)
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 _FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
@@ -168,11 +168,19 @@ def quant_route(ticker):
     except ValueError:
         expense = 0.0095
     try:
-        df, source = _load(ticker, "1day", long=True)   # 백테스트는 전체 히스토리(정직성)
+        note = None
+        try:
+            df, source = _load(ticker, "1day", long=True)   # 백테스트는 10년
+        except Exception as e_long:
+            # 10년 요청이 한도/차단(429)이면, 차트가 받아둔 3년 데이터로라도 분석(완전 실패 방지)
+            df, source = _load(ticker, "1day", long=False)
+            note = "10년 데이터 차단(API 한도) → 3년 구간으로 분석. 200일선 워밍업 탓 유효구간이 짧으니 참고용."
         import quant as Q
         res = Q.analyze(df, cost_bps=cost, expense=expense)
         res.pop("ret", None)  # 직렬화 불가 Series 제거(내부용)
-        res["meta"] = {"ticker": ticker, "source": source}
+        res["meta"] = {"ticker": ticker, "source": source, "bars": len(df)}
+        if note:
+            res["meta"]["note"] = note
         return jsonify(res)
     except Exception as e:
         import traceback; traceback.print_exc()
