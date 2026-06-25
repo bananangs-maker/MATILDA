@@ -599,7 +599,7 @@
     </div>
     <div class="stats" id="qStats"></div>
     <div id="qEquity"></div>
-    <div class="qsub2">① 200MA 골격 + 방어 변형 연구 <span class="hint">레버리지엔 '200일선 아래=현금'이 핵심. 위에서 언제/얼마나 줄일지 변형을 칼마로 비교 — 200MA 단독을 이기는 변형 찾기</span></div>
+    <div class="qsub2">① 분할 진입 연구 <span class="hint">200MA 위=홀딩 골격 고정. 재돌파 시 '한 방 vs 분할', 확인일수를 칼마·MDD·회전율로 비교 — 분할이 휩쏘를 줄이는지 검증</span></div>
     <div id="qMaR"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
@@ -1300,9 +1300,9 @@ function renderQuant(d){
     const mar=d.ma_research;
     if(mar){
       const names=Object.keys(mar);
-      const baseCal=mar['200MA(아래0)']?mar['200MA(아래0)'].calmar:0;
+      const baseCal=mar['즉시(200MA)']?mar['즉시(200MA)'].calmar:0;
       let bestNm=null,bestCal=-1e9; names.forEach(n=>{if(mar[n].calmar>bestCal){bestCal=mar[n].calmar;bestNm=n;}});
-      const rowOf=(nm)=>{const m=mar[nm];const win=nm===bestNm;const beat=m.calmar>baseCal&&nm!=='200MA(아래0)';
+      const rowOf=(nm)=>{const m=mar[nm];const win=nm===bestNm;const beat=m.calmar>baseCal&&nm!=='즉시(200MA)';
         return "<tr"+(win?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(win?" ★":"")+(beat?" <span style='color:var(--go)'>↑</span>":"")+"</td>"
           +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td>"
           +"<td>"+m.sharpe+"</td><td class='neg'>"+m.mdd+"%</td>"
@@ -1311,7 +1311,7 @@ function renderQuant(d){
           +"<td style='color:var(--faint)'>"+(m.turnover_yr!=null?m.turnover_yr:'—')+"</td></tr>";};
       let h="<table class='wftab cmptab'><tr><th>변형</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th><th>연회전율</th></tr>";
       names.forEach(n=>h+=rowOf(n));
-      h+="</table><div class='btnote'>기준=<b>200MA(아래0)</b>(칼마 "+baseCal+"). <b>빠른 방어</b>(급락·변동성)와 <b>아래 비중</b>(0/10/15%)을 조합. 칼마↑(초록)+MDD↓면 방어 효과. 단 <b>연회전율</b>이 폭증하면 휩쏘 손해. <b>TQQQ·SOXL 둘 다</b> 이겨야 채택.</div>";
+      h+="</table><div class='btnote'>기준=<b>즉시(200MA)</b>(칼마 "+baseCal+"). 분할/확인이 칼마↑·MDD↓·회전율↓면 휩쏘 방어 효과. 단 추세장 상승을 놓쳐 총수익이 줄 수 있음. <b>TQQQ·SOXL 둘 다</b> 일관되게 나아야 채택. ★=최고 칼마.</div>";
       document.getElementById('qMaR').innerHTML=h;
     }
     // 단순 베이스라인 비교

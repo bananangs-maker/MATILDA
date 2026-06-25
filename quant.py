@@ -256,47 +256,45 @@ def rolling_series(df, p, cost_bps=5.0, expense=0.0095, win=63):
     return {"points": pts, "win": win}
 
 
-def ma_research(df, cost_bps=5.0, expense=0.0095):
-    """[1단계 연구] 200MA 골격에 (a)빠른 방어, (b)200선 아래 비중을 조합해 비교.
-    핵심 질문: 위에서 빠른 신호로 방어가 되는가 / 아래는 0%가 답인가 소량 유지가 답인가.
-    회전율(휩쏘 비용)도 함께 본다."""
+def entry_research(df, cost_bps=5.0, expense=0.0095):
+    """[분할 진입 연구] 200MA 위=홀딩 골격은 고정. '진입 속도(한 방 vs 분할)'와 '재돌파 확인일'만 변형.
+    가설: 분할/확인은 휩쏘(가짜 돌파) 손실을 줄인다. 단 추세장 상승은 약간 놓친다 → 칼마/MDD/회전율로 판정."""
     df = df.reset_index(drop=True)
     k = ST.indikit(df)
-    close, sma200, rvol = k["close"], k["sma200"], k["rvol"]
-    ret1, dd20 = k["ret1"], k["dd20"]
-    warm = sma200.isna()
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
     above = (close > sma200).to_numpy()
-    idx = df.index
-    # 빠른 방어 신호(가격/변동성 기반, MA크로스보다 빠름)
-    crash = ((ret1 <= -8) | (dd20 <= -15)).to_numpy()                 # 급락
-    rvmed = rvol.rolling(200, min_periods=60).median()
-    volspike = (rvol > rvmed * 1.5).to_numpy()                        # 변동성 급등
+    N = len(df)
 
-    def E(arr):
-        s = pd.Series(arr, index=idx, dtype=float); s[warm] = np.nan; return s
+    def in_signal(confirm):
+        if confirm <= 1:
+            return above.copy()
+        s = pd.Series(above.astype(float)).rolling(confirm).sum().to_numpy()
+        return (s >= confirm)          # confirm일 연속 200선 위
 
-    def build(below, defense):
-        up = np.full(len(df), 1.0)
-        if defense == "crash":
-            up = np.where(crash, 0.30, 1.0)
-        elif defense == "vol":
-            up = np.where(volspike, 0.50, 1.0)
-        elif defense == "both":
-            up = np.where(crash, 0.30, np.where(volspike, 0.50, 1.0))
-        return E(np.where(above, up, below))
+    def ramp_target(insig, ramp_days):
+        e = np.empty(N); cur = 0.0
+        for t in range(N):
+            if warm[t]:
+                e[t] = np.nan; cur = 0.0; continue
+            if insig[t]:
+                cur = min(1.0, cur + 1.0 / ramp_days)   # 보유 중 매일 목표까지 분할 증액
+            else:
+                cur = 0.0                               # 200선 아래 = 현금
+            e[t] = cur
+        return e
 
     variants = {
-        "200MA(아래0)": build(0.0, None),
-        "아래10%": build(0.10, None),
-        "아래15%": build(0.15, None),
-        "급락회피+아래0": build(0.0, "crash"),
-        "급락회피+아래10": build(0.10, "crash"),
-        "변동성차단+아래0": build(0.0, "vol"),
-        "급락+변동성+아래10": build(0.10, "both"),
+        "즉시(200MA)": ramp_target(in_signal(1), 1),
+        "분할5일": ramp_target(in_signal(1), 5),
+        "분할10일": ramp_target(in_signal(1), 10),
+        "분할20일": ramp_target(in_signal(1), 20),
+        "확인3일+분할10": ramp_target(in_signal(3), 10),
+        "확인5일+분할10": ramp_target(in_signal(5), 10),
     }
     out = {}
     for nm, e in variants.items():
-        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+        sr, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
         out[nm] = _metrics(sr, pos, turn)
     return out
 
@@ -310,7 +308,7 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     bl = baselines(df, p, cost_bps, expense)
     rp = regime_perf(df, p, cost_bps, expense)
     roll = rolling_series(df, p, cost_bps, expense)
-    mar = ma_research(df, cost_bps, expense)
+    mar = entry_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
