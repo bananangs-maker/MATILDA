@@ -70,16 +70,17 @@ def _sentiment_cached():
         return _SENT["data"]   # 직전 캐시라도 있으면 사용, 없으면 None
 
 
-def _load(ticker, interval="1day"):
+def _load(ticker, interval="1day", long=False):
     if USE_MOCK:
-        n = {"1day": 500, "1week": 400, "1month": 300}.get(interval, 500)
+        n = {"1day": 2600 if long else 780, "1week": 400, "1month": 300}.get(interval, 780)
         return mock_ohlcv(ticker, n, interval), "MOCK (합성 데이터)"
-    ckey = (ticker, interval)
+    ckey = (ticker, interval, long)
     hit = _CACHE.get(ckey)
     if hit and time.time() - hit[2] < _TTL:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    df, source = daily_ohlcv(ticker, yrange="2y", interval=interval)
+    yrange = "max" if long else "3y"
+    df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
     _CACHE[ckey] = (df, source, time.time())
     return df, source
 
@@ -167,7 +168,7 @@ def quant_route(ticker):
     except ValueError:
         expense = 0.0095
     try:
-        df, source = _load(ticker, "1day")   # 백테스트는 항상 일봉
+        df, source = _load(ticker, "1day", long=True)   # 백테스트는 전체 히스토리(정직성)
         import quant as Q
         res = Q.analyze(df, cost_bps=cost, expense=expense)
         res.pop("ret", None)  # 직렬화 불가 Series 제거(내부용)

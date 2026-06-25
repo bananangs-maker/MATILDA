@@ -599,6 +599,12 @@
     </div>
     <div class="stats" id="qStats"></div>
     <div id="qEquity"></div>
+    <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
+    <div id="qBase"></div>
+    <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
+    <div id="qRegime"></div>
+    <div class="qsub2">롤링 드로다운 <span class="hint">진행 낙폭(%) — 언제 얼마나 물렸는지</span></div>
+    <div id="qRoll"></div>
     <div class="qsub2">롤링 워크포워드 <span class="hint">인샘플에서 파라미터 최적화 → 아웃오브샘플 적용(과적합 점검)</span></div>
     <div id="qWf"></div>
     <div class="qsub2">파라미터 견고성 <span class="hint">색이 고르면 특정 값에 민감하지 않다는 뜻(평원). 최적값 찾기가 아니라 견고성 확인이 목적</span></div>
@@ -1260,6 +1266,22 @@ function heatColor(v,lo,hi){ // Sharpe → 빨강(낮음)~회색~초록(높음)
   const r=Math.round(242-(242-38)*t), g=Math.round(54+(194-54)*t), b=Math.round(69+(129-69)*t);
   return 'rgb('+r+','+g+','+b+')';
 }
+let rollChart=null,rollS=null;
+function renderRollDD(roll){
+  const box=document.getElementById('qRoll'); if(!box)return;
+  if(!roll||!roll.points||!roll.points.length){box.innerHTML="<div class='btnote' style='color:var(--faint)'>데이터 부족</div>";return;}
+  if(typeof LightweightCharts==='undefined'){box.innerHTML='';return;}
+  if(!rollChart){
+    rollChart=LightweightCharts.createChart(box,{
+      layout:{background:{color:'transparent'},textColor:C.ink,fontFamily:"'JetBrains Mono',monospace"},
+      grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},
+      rightPriceScale:{borderColor:C.border},timeScale:{borderColor:C.border},height:150});
+    rollS=rollChart.addAreaSeries({lineColor:C.down,topColor:'rgba(255,59,70,.05)',bottomColor:'rgba(255,59,70,.35)',lineWidth:1,priceLineVisible:false});
+    window.addEventListener('resize',()=>rollChart&&rollChart.applyOptions({width:box.clientWidth}));
+  }
+  rollS.setData(roll.points.map(p=>({time:p.time,value:p.dd})));
+  rollChart.timeScale().fitContent();
+}
 function renderQuant(d){
     const s=d.stats;
     document.getElementById('qPeriod').textContent=state.ticker+' · '+s.period+' · '+s.bars+'봉 · 비용'+s.cost_bps+'bps · 보수'+(s.expense*100).toFixed(2)+'%';
@@ -1268,9 +1290,40 @@ function renderQuant(d){
       statCard(s.cagr,'CAGR',true)+statCard(s.sharpe,'샤프',false)+statCard(s.sortino,'소르티노',false)+
       statCard(s.mdd,'전략 MDD',true)+statCard(s.bh_mdd,'보유 MDD',true)+statCard(s.calmar,'칼마',false)+
       statCard(s.vol+'%','변동성',false)+statCard(s.avg_expo+'%','평균노출',false)+
-      statCard(s.time_in+'%','시장체류',false)+statCard(s.turnover_yr,'연회전율',false);
+      statCard(s.time_in+'%','시장체류',false)+statCard(s.turnover_yr,'연회전율',false)+
+      statCard(s.worst_day,'최악일',true)+statCard(s.cvar5,'CVaR 5%',true)+statCard(s.ulcer+'%','얼서지수',false);
     makeQChart(); if(qS1)qS1.setData(d.equity); if(qS2)qS2.setData(d.bh);
     if(qChart)qChart.timeScale().fitContent();
+    // 단순 베이스라인 비교
+    const bl=d.baselines;
+    if(bl){
+      const order=['전략','200MA 필터','변동성타겟','고정비중','매수후보유'];
+      const rowOf=(nm,m)=>{
+        const best=nm==='전략';
+        return "<tr"+(best?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(best?" ★":"")+"</td>"
+          +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td>"
+          +"<td>"+m.sharpe+"</td><td class='neg'>"+m.mdd+"%</td><td>"+(m.calmar||0)+"</td>"
+          +"<td style='color:var(--faint)'>"+(m.avg_expo!=null?m.avg_expo+'%':'—')+"</td></tr>";};
+      let h="<table class='wftab cmptab'><tr><th>전략</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th></tr>";
+      h+=rowOf('전략',s);
+      ['200MA 필터','변동성타겟','고정비중'].forEach(nm=>{ if(bl[nm])h+=rowOf(nm,bl[nm]); });
+      h+=rowOf('매수후보유',{total:s.bh_total,sharpe:'—',mdd:s.bh_mdd,calmar:'—',avg_expo:100});
+      h+="</table><div class='btnote'>엔진(★)이 단순 규칙 대비 <b>위험조정(샤프·칼마·MDD)</b>에서 우위가 없다면 복잡성은 정당화되지 않습니다. 총수익만 보지 말 것.</div>";
+      document.getElementById('qBase').innerHTML=h;
+    }
+    // 레짐별 조건부 성과
+    const rp=d.regime_perf;
+    if(rp){
+      const seg=(lab,o)=>o?("<tr><td>"+lab+"</td><td style='color:var(--faint)'>"+o.n+"봉</td>"
+        +"<td class='"+(o.total>=0?'pos':'neg')+"'>"+(o.total>=0?'+':'')+o.total+"%</td>"
+        +"<td>"+o.sharpe+"</td><td class='neg'>"+o.mdd+"%</td></tr>"):("<tr><td>"+lab+"</td><td colspan='4' style='color:var(--faint)'>표본 부족</td></tr>");
+      let h="<table class='wftab cmptab'><tr><th>레짐</th><th>표본</th><th>수익</th><th>샤프</th><th>MDD</th></tr>";
+      h+=seg('200일선 위',rp.above200)+seg('200일선 아래',rp.below200)+seg('추세(ADX↑)',rp.trending)+seg('횡보(ADX↓)',rp.ranging);
+      h+="</table><div class='btnote'>전략이 특정 레짐(예: 추세장)에만 의존하는지 점검. 횡보·하락에서 무너지면 실거래 위험.</div>";
+      document.getElementById('qRegime').innerHTML=h;
+    }
+    // 롤링 드로다운
+    renderRollDD(d.rolling);
     const wf=d.walk_forward;
     if(wf&&!wf.error){
       let html="<table class='wftab'><tr><th>Fold</th><th>OOS 기간</th><th>최적 tv·acute</th><th>IS샤프</th><th>OOS샤프</th><th>OOS수익</th></tr>";
@@ -1297,10 +1350,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+  rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q2_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1315,7 +1369,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q2_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

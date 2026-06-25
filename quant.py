@@ -21,26 +21,36 @@ import strategy as ST
 ANN = 252
 
 
-def _strat_returns(df, params, cost_bps=5.0, expense=0.0095):
-    """T+1 시가 체결 기준 전략 일수익률 시계열 + 포지션/벤치마크 반환."""
+def _exec_returns(df, e, cost_bps=5.0, expense=0.0095):
+    """주어진 목표비중 시계열 e[t](종가[t] 결정)를 T+1 시가 체결로 실행 → 일수익률/포지션/회전율.
+    워밍업(NaN) 구간은 NaN 유지 → 통계에서 제외."""
     o = df["open"].to_numpy(dtype=float)
-    e = ST.exposure_core(df, params).to_numpy(dtype=float)   # e[t]=종가[t]에서 결정된 목표비중
-    N = len(df)
-    e_prev = np.concatenate([[np.nan], e[:-1]])              # 시가[t]에 체결되는 비중 = e[t-1]
+    e = np.asarray(e, dtype=float)
+    e_prev = np.concatenate([[np.nan], e[:-1]])
     with np.errstate(invalid="ignore", divide="ignore"):
-        oo = np.concatenate([o[1:] / o[:-1] - 1.0, [np.nan]])  # 시가[t]->시가[t+1] 수익(index t)
-    pos = np.nan_to_num(e_prev)
-    gross = pos * np.nan_to_num(oo)
-    turn = np.abs(np.diff(np.concatenate([[0.0], pos])))     # 비중 변화량(회전율)
-    cost = turn * (cost_bps / 1e4) + pos * (expense / ANN)   # 거래비용 + 운용보수 일할
+        oo = np.concatenate([o[1:] / o[:-1] - 1.0, [np.nan]])
+    pos = e_prev
+    gross = pos * oo
+    prev = np.concatenate([[np.nan], pos[:-1]])
+    turn = np.where(np.isnan(pos), np.nan, np.abs(pos - np.nan_to_num(prev)))
+    cost = turn * (cost_bps / 1e4) + pos * (expense / ANN)
     strat = gross - cost
-    bh = np.nan_to_num(oo)                                   # 매수후보유(시가 풀투자)
-    # 마지막 봉은 oo가 NaN → 0 처리됨
-    return pd.Series(strat, index=df.index), pd.Series(bh, index=df.index), pd.Series(pos, index=df.index), turn
+    return (pd.Series(strat, index=df.index), pd.Series(pos, index=df.index),
+            pd.Series(turn, index=df.index), pd.Series(oo, index=df.index))
+
+
+def _strat_returns(df, params, cost_bps=5.0, expense=0.0095):
+    """전략 코어(exposure_core)를 T+1 실행. + 동일 활성구간 매수후보유(BH)."""
+    e = ST.exposure_core(df, params).to_numpy(dtype=float)
+    strat, pos, turn, oo = _exec_returns(df, e, cost_bps, expense)
+    bh = pd.Series(np.where(np.isnan(pos.to_numpy()), np.nan, oo.to_numpy()), index=df.index)
+    return strat, bh, pos, turn
 
 
 def _metrics(r: pd.Series, pos: pd.Series = None, turn=None) -> dict:
-    r = r.fillna(0.0)
+    r = r.dropna()                       # 워밍업/마지막 NaN 제외 → 활성 구간만
+    if len(r) == 0:
+        return {"total": 0, "cagr": 0, "vol": 0, "sharpe": 0, "sortino": 0, "mdd": 0, "calmar": 0}
     eq = (1 + r).cumprod()
     n = len(r)
     total = float(eq.iloc[-1] - 1) * 100
@@ -51,20 +61,27 @@ def _metrics(r: pd.Series, pos: pd.Series = None, turn=None) -> dict:
     sortino = float(r.mean() / downside.std() * np.sqrt(ANN)) if len(downside) > 1 and downside.std() > 0 else 0.0
     mdd = float(((eq / eq.cummax()) - 1).min() * 100)
     calmar = float(cagr / abs(mdd)) if mdd < 0 else 0.0
+    worst = float(r.min() * 100)
+    cvar5 = float(r[r <= r.quantile(0.05)].mean() * 100) if n >= 20 else worst
+    ddc = (eq / eq.cummax() - 1)
+    ulcer = float(np.sqrt((ddc ** 2).mean()) * 100)
     out = {"total": round(total, 1), "cagr": round(cagr, 1), "vol": round(vol, 1),
            "sharpe": round(sharpe, 2), "sortino": round(sortino, 2),
-           "mdd": round(mdd, 1), "calmar": round(calmar, 2)}
+           "mdd": round(mdd, 1), "calmar": round(calmar, 2),
+           "worst_day": round(worst, 1), "cvar5": round(cvar5, 1), "ulcer": round(ulcer, 1)}
     if pos is not None:
-        out["avg_expo"] = round(float(pos.mean()) * 100, 1)
-        out["time_in"] = round(float((pos > 0.01).mean()) * 100, 1)
+        pp = pos.dropna()
+        out["avg_expo"] = round(float(pp.mean()) * 100, 1) if len(pp) else 0.0
+        out["time_in"] = round(float((pp > 0.01).mean()) * 100, 1) if len(pp) else 0.0
     if turn is not None:
-        out["turnover_yr"] = round(float(np.nansum(turn)) / max(1, n) * ANN, 1)
+        tv = turn.to_numpy() if hasattr(turn, "to_numpy") else turn
+        out["turnover_yr"] = round(float(np.nansum(tv)) / max(1, n) * ANN, 1)
     return out
 
 
 def _sharpe(r: pd.Series) -> float:
-    r = r.fillna(0.0)
-    return float(r.mean() / r.std() * np.sqrt(ANN)) if r.std() > 0 else 0.0
+    r = r.dropna()
+    return float(r.mean() / r.std() * np.sqrt(ANN)) if len(r) > 1 and r.std() > 0 else 0.0
 
 
 def backtest(df, params=None, cost_bps=5.0, expense=0.0095):
@@ -75,11 +92,15 @@ def backtest(df, params=None, cost_bps=5.0, expense=0.0095):
     bh_st = _metrics(bh)
     st["bh_total"] = bh_st["total"]; st["bh_mdd"] = bh_st["mdd"]; st["bh_cagr"] = bh_st["cagr"]
     dates = df["date"].astype(str).tolist()
-    eq = (1 + strat.fillna(0)).cumprod(); bhe = (1 + bh.fillna(0)).cumprod()
-    step = max(1, len(df) // 400)
-    equity = [{"time": dates[i], "value": round(float(eq.iloc[i]), 4)} for i in range(0, len(df), step)]
-    bhcurve = [{"time": dates[i], "value": round(float(bhe.iloc[i]), 4)} for i in range(0, len(df), step)]
-    st["period"] = f"{dates[0]} ~ {dates[-1]}"; st["bars"] = len(df)
+    sa = strat.dropna()                      # 활성 구간만(워밍업 0-수익 선두 제거)
+    ba = bh.reindex(sa.index)
+    eq = (1 + sa.fillna(0)).cumprod(); bhe = (1 + ba.fillna(0)).cumprod()
+    pidx = list(sa.index)                    # df 정수 인덱스(활성 봉 위치)
+    m = len(sa); step = max(1, m // 400)
+    equity = [{"time": dates[pidx[i]], "value": round(float(eq.iloc[i]), 4)} for i in range(0, m, step)]
+    bhcurve = [{"time": dates[pidx[i]], "value": round(float(bhe.iloc[i]), 4)} for i in range(0, m, step)]
+    st["period"] = f"{dates[pidx[0]]} ~ {dates[pidx[-1]]}" if m else "—"
+    st["bars"] = m
     st["cost_bps"] = cost_bps; st["expense"] = expense
     return {"stats": st, "equity": equity, "bh": bhcurve, "ret": strat}
 
@@ -168,11 +189,77 @@ def monte_carlo(strat_ret: pd.Series, n_sims=600, block=5, seed=7):
             "n_sims": n_sims, "block": block}
 
 
+def _baseline_exposures(df, p):
+    """복잡한 엔진의 가치를 검증하기 위한 단순 대안 비중들. 모두 전략과 같은 활성구간(200일선 형성 후)."""
+    k = ST.indikit(df)
+    close, sma200, rvol = k["close"], k["sma200"], k["rvol"]
+    warm = sma200.isna()
+    maxcap = p["maxcap"]
+    ma = pd.Series(np.where(close > sma200, 1.0, 0.0), index=df.index)   # 200일선 위=풀투자, 아래=현금
+    vt = (p["target_vol"] / rvol).clip(p["vt_floor"], p["vt_cap"]).clip(upper=maxcap)  # 변동성타겟만
+    fixed = pd.Series(maxcap, index=df.index)                           # 상수 비중(=maxcap)
+    for s in (ma, vt, fixed):
+        s[warm] = np.nan
+    return {"200MA 필터": ma, "변동성타겟": vt, "고정비중": fixed}
+
+
+def baselines(df, p, cost_bps=5.0, expense=0.0095):
+    out = {}
+    for name, e in _baseline_exposures(df, p).items():
+        sr, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
+        out[name] = _metrics(sr, pos, turn)
+    return out
+
+
+def regime_perf(df, p, cost_bps=5.0, expense=0.0095):
+    """레짐(추세/횡보, 200일선 위/아래)별 조건부 성과 — 언제 작동/실패하는지."""
+    strat, _, _, _ = _strat_returns(df, p, cost_bps, expense)
+    k = ST.indikit(df)
+    above = (k["close"] > k["sma200"]).shift(1).fillna(False).astype(bool)   # 보유 포지션은 직전 봉 레짐
+    ranging = (k["adx"] < p["adx_range"]).shift(1).fillna(False).astype(bool)
+
+    def seg(mask):
+        rr = strat[mask].dropna()
+        if len(rr) < 10:
+            return None
+        eq = (1 + rr).cumprod()
+        return {"n": int(len(rr)), "total": round(float(eq.iloc[-1] - 1) * 100, 1),
+                "sharpe": round(_sharpe(rr), 2),
+                "mdd": round(float((eq / eq.cummax() - 1).min() * 100), 1)}
+    return {"above200": seg(above), "below200": seg(~above),
+            "trending": seg(~ranging), "ranging": seg(ranging)}
+
+
+def rolling_series(df, p, cost_bps=5.0, expense=0.0095, win=63):
+    """롤링 샤프(63일) + 진행 드로다운 — 차트용 다운샘플."""
+    strat, _, _, _ = _strat_returns(df, p, cost_bps, expense)
+    sa = strat.dropna()
+    if len(sa) < win + 10:
+        return {"points": []}
+    eq = (1 + sa).cumprod()
+    dd = (eq / eq.cummax() - 1) * 100
+    rs = (sa.rolling(win).mean() / sa.rolling(win).std() * np.sqrt(ANN))
+    dates = df["date"].astype(str).to_numpy()
+    idx = list(sa.index)
+    step = max(1, len(sa) // 400)
+    pts = []
+    for i in range(0, len(sa), step):
+        v = rs.iloc[i]
+        pts.append({"time": dates[idx[i]], "dd": round(float(dd.iloc[i]), 1),
+                    "sharpe": (round(float(v), 2) if v == v else None)})
+    return {"points": pts, "win": win}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
+    p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
     wf = walk_forward(df, cost_bps=cost_bps, expense=expense)
     rob = robustness(df, cost_bps, expense)
     mc = monte_carlo(base["ret"])
+    bl = baselines(df, p, cost_bps, expense)
+    rp = regime_perf(df, p, cost_bps, expense)
+    roll = rolling_series(df, p, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
+            "baselines": bl, "regime_perf": rp, "rolling": roll,
             "cost_bps": cost_bps, "expense": expense}

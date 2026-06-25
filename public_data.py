@@ -70,10 +70,10 @@ def _from_twelvedata(ticker: str, outputsize: int = 500, interval: str = "1day")
     raise RuntimeError(f"Twelve Data {last or '요청 실패'}")
 
 
-def _from_yahoo(ticker: str, interval: str = "1day") -> pd.DataFrame:
+def _from_yahoo(ticker: str, interval: str = "1day", yrange: str = None) -> pd.DataFrame:
     """야후 파이낸스 chart v8 (키 불필요 · 일/주/월 지원 · 폴백 주력)."""
     iv = {"1day": "1d", "1week": "1wk", "1month": "1mo"}.get(interval, "1d")
-    rng = {"1day": "2y", "1week": "10y", "1month": "max"}.get(interval, "2y")
+    rng = yrange or {"1day": "3y", "1week": "10y", "1month": "max"}.get(interval, "3y")
     last = None
     for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
         try:
@@ -161,17 +161,20 @@ def market_quotes() -> list:
     return out
 
 
-def daily_ohlcv(ticker: str, yrange: str = "2y", interval: str = "1day") -> tuple[pd.DataFrame, str]:
+def daily_ohlcv(ticker: str, yrange: str = "3y", interval: str = "1day") -> tuple[pd.DataFrame, str]:
     ticker = ticker.upper()
     if not valid_ticker(ticker):
         raise ValueError(f"잘못된 티커 형식: {ticker}")
     errors = []
-    # 주봉/월봉은 outputsize를 키워 충분한 히스토리 확보 (200기간 MA 등)
-    osize = 500 if interval == "1day" else (600 if interval == "1week" else 360)
-    sources = [("Yahoo", lambda: _from_yahoo(ticker, interval)),
+    # 일봉 outputsize: yrange에 맞춰. 주봉/월봉은 충분히 크게(200기간 MA 등)
+    if interval == "1day":
+        osize = {"2y": 520, "3y": 780, "5y": 1300, "10y": 2600, "max": 5000}.get(yrange, 780)
+    else:
+        osize = 600 if interval == "1week" else 360
+    sources = [("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
                ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
     if interval == "1day":
-        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 마지막 폴백(일봉만)
+        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 마지막 폴백(일봉만, 전체 히스토리)
     for name, fn in sources:
         try:
             df = fn()
