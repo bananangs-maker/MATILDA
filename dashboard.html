@@ -648,6 +648,8 @@
     <div id="qBear"></div>
     <div class="qsub2">④ 익절 비율·재진입 검증 <span class="hint">단계당 익절 5/10/15/20% 중 칼마 최적은? 이격 회복 시 재진입을 같은 임계(휩쏘) vs 여유(히스테리시스) 어느 쪽이 나은지. 회전율로 휩쏘 비용도 확인</span></div>
     <div id="qReentry"></div>
+    <div class="qsub2">⑤ 하향돌파 후 이격 분포 <span class="hint">200선 하향돌파 후 가격이 200선 대비 얼마나 더 깊이 빠졌다 회복하는지 — '패닉 타임' 기준(X% 이격)의 데이터 근거. 10년치로 돌릴 것</span></div>
+    <div id="qBreak"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1487,6 +1489,31 @@ function renderQuant(d){
       h+="<div class='btnote' style='margin-top:6px'>칼마가 평원(다 비슷)이면 비율은 둔감 → 행동·심리 편한 값 선택 가능. 특정값만 튀면 과적합 의심. 회전/년이 높을수록 매매 잦음(휩쏘·세금↑). <b>재진입은 이미 백테스트에 반영됨</b>(이격 회복 시 비중 자동 복원) — 검증된 알파의 일부.</div>";
       document.getElementById('qReentry').innerHTML=h;
     }
+    // ⑤ 하향돌파 후 이격 분포
+    const bd=d.breakdown_research;
+    if(bd&&bd.summary){
+      const sm=bd.summary;
+      let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11.5px'>"
+        +"<b>200선 하향돌파 "+sm.n+"회</b> — 돌파 후 저점 이격 분포:<br>"
+        +"<div style='margin-top:5px;display:flex;flex-wrap:wrap;gap:14px;font-family:var(--mono)'>"
+        +"<span>중앙값 <b>"+sm.median+"%</b></span>"
+        +"<span style='color:var(--caution)'>75%깊이 <b>"+sm.p75_depth+"%</b></span>"
+        +"<span style='color:#E0A458'>90%깊이 <b>"+sm.p90_depth+"%</b></span>"
+        +"<span style='color:var(--stop)'>최악 <b>"+sm.worst+"%</b></span>"
+        +"<span style='color:var(--faint)'>지속 중앙 "+sm.dur_median+"일·최장 "+sm.dur_max+"일</span></div></div>";
+      h+="<div class='btnote' style='margin:2px 0'>가장 깊었던 하향돌파 사건들</div>";
+      h+="<table class='wftab'><tr><th>돌파 시작</th><th>최저 이격</th><th>지속(일)</th><th>회복</th></tr>";
+      bd.episodes.forEach(e=>{
+        h+="<tr><td>"+e.start+"</td><td class='neg'>"+e.trough+"%</td><td>"+e.duration+"</td>"
+          +"<td>"+(e.recovered?"<span style='color:var(--go)'>회복 ✓</span>":"<span style='color:var(--caution)'>진행중</span>")+"</td></tr>";
+      });
+      h+="</table>";
+      h+="<div class='btnote' style='margin-top:6px'><b>패닉 기준 해석</b> — 돌파 후 보통 <b>중앙값(~"+sm.median+"%)</b>에서 반등. "
+        +"<b style='color:#E0A458'>90%깊이("+sm.p90_depth+"%)</b>를 넘어서면 통상 범위 밖 = '패닉 타임' 후보 기준. "
+        +"이보다 더 빠지면 엔진(200선 청산)이 제때 작동 못한 비정상 상황 → 현금·분할매수 대응 구간. "
+        +"단 표본 "+sm.n+"회는 적으니(약세장 부족) 절대기준 아닌 참고로.</div>";
+      document.getElementById('qBreak').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1547,11 +1574,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qBreak'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q9_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qa_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1566,7 +1593,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q9_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qa_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

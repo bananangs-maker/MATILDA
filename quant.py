@@ -479,6 +479,55 @@ def bear_research(df, cost_bps=5.0, expense=0.0095):
     return {"variants": out, "bear": bear_perf, "diag": diag}
 
 
+def breakdown_research(df):
+    """[하향돌파 후 이격 분포] 200선 하향돌파 후, 가격이 200선 대비 '얼마나 더 깊이' 빠졌다가
+    회복하는지의 분포. 패닉 기준(X% 이격)의 데이터 근거. 보통 -A%에서 반등, 드물게 -B%까지."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close = k["close"].to_numpy()
+    sma200 = k["sma200"].to_numpy()
+    warm = np.isnan(sma200)
+    above = close > sma200
+    dates = df["date"].tolist() if "date" in df.columns else list(range(len(df)))
+
+    episodes = []
+    i = 0
+    n = len(df)
+    while i < n:
+        if warm[i] or above[i]:
+            i += 1; continue
+        # 하향돌파 시작 (직전봉이 위였거나 워밍업 직후)
+        start = i
+        trough = 0.0
+        while i < n and not warm[i] and not above[i]:
+            d = (close[i] / sma200[i] - 1.0) * 100
+            if d < trough:
+                trough = d
+            i += 1
+        recovered = (i < n and above[i])   # 200선 위로 회복하며 종료했나
+        episodes.append({"start": str(dates[start]), "trough": float(round(trough, 1)),
+                         "duration": int(i - start), "recovered": bool(recovered)})
+
+    troughs = sorted([e["trough"] for e in episodes])   # 음수, 오름차순(깊은 게 앞)
+    durs = sorted([e["duration"] for e in episodes])
+    def pct(arr, q):
+        if not arr: return None
+        idx = min(len(arr) - 1, int(round(q / 100 * (len(arr) - 1))))
+        return float(arr[idx])
+    # trough는 음수라 '깊이' 백분위: 90%깊이 = 하위10%(가장 깊은 쪽)
+    summary = {
+        "n": len(episodes),
+        "median": pct(troughs, 50),
+        "p75_depth": pct(troughs, 25),   # 더 깊은 25% 경계
+        "p90_depth": pct(troughs, 10),   # 더 깊은 10% 경계
+        "worst": float(troughs[0]) if troughs else None,
+        "dur_median": pct(durs, 50),
+        "dur_max": int(durs[-1]) if durs else None,
+    }
+    deepest = sorted(episodes, key=lambda e: e["trough"])[:12]   # 가장 깊었던 사건들
+    return {"summary": summary, "episodes": deepest}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -492,9 +541,10 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     exitr = exit_research(df, cost_bps, expense)
     reentry = exit_reentry_research(df, cost_bps, expense)
     bearr = bear_research(df, cost_bps, expense)
+    breakdown = breakdown_research(df)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
-            "bear_research": bearr,
+            "bear_research": bearr, "breakdown_research": breakdown,
             "cost_bps": cost_bps, "expense": expense}
