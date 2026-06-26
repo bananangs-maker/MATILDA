@@ -48,7 +48,9 @@ def mock_ohlcv(ticker: str, n: int = 500, interval: str = "1day") -> pd.DataFram
 
 import time
 _CACHE = {}          # ticker -> (df, source, fetched_at)
-_TTL = 3600          # 1시간 캐시 (키 기반 Twelve Data 일일 한도 절약 — 일봉은 장중 거의 안 변함)
+_TTL = 3600          # 시장심리(sentiment) 캐시 1시간
+_DATA_TTL_CHART = 3600       # 3년 차트: 1시간(장중 현재가 신선도 유지)
+_DATA_TTL_BT = 12 * 3600     # 10년 백테스트: 12시간(역사 분석은 당일 봉 신선도 불필요 → API 한도 대폭 절약)
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 _FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
@@ -75,14 +77,21 @@ def _load(ticker, interval="1day", long=False):
         n = {"1day": 5200 if long else 780, "1week": 400, "1month": 300}.get(interval, 780)
         return mock_ohlcv(ticker, n, interval), "MOCK (합성 데이터)"
     ckey = (ticker, interval, long)
+    ttl = _DATA_TTL_BT if long else _DATA_TTL_CHART
     hit = _CACHE.get(ckey)
-    if hit and time.time() - hit[2] < _TTL:
+    if hit and time.time() - hit[2] < ttl:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
     yrange = "10y" if long else "3y"   # 백테스트=10년(클라우드에서 안정적). 2000~ 깊은 역사는 CSV 업로드로.
-    df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
-    _CACHE[ckey] = (df, source, time.time())
-    return df, source
+    try:
+        df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
+        _CACHE[ckey] = (df, source, time.time())
+        return df, source
+    except Exception:
+        # 모든 소스 실패(429 등) → 만료된 캐시라도 있으면 사용(완전 실패 방지)
+        if hit:
+            return hit[0], hit[1] + " · 캐시(만료·한도소진으로 갱신실패, 직전 데이터 사용)"
+        raise
 
 
 @app.route("/")
