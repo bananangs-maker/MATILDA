@@ -17,6 +17,7 @@ quant.py — 퀀트 백테스트/리서치 레이어
 import numpy as np
 import pandas as pd
 import strategy as ST
+import indicators as I
 
 ANN = 252
 
@@ -312,6 +313,221 @@ def entry_research(df, cost_bps=5.0, expense=0.0095):
     return out, diag
 
 
+def exit_research(df, cost_bps=5.0, expense=0.0095):
+    """[과열 익절 견고성 검증] 이격익절의 임계값 세트를 흔들어 칼마가 평원인지(강건) 스파이크인지(과적합) 확인.
+    여러 임계값 세트에서 모두 홀딩(200MA)을 이기면 진짜 효과. TQQQ·SOXL 둘 다 봐야 함."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    rsi = I.rsi(close, 14).to_numpy()
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def trim_by(x, t1, t2, t3):   # 3단계 익절: t1↑→0.9, t2↑→0.8, t3↑→0.7
+        return np.where(x > t3, 0.7, np.where(x > t2, 0.8, np.where(x > t1, 0.9, 1.0)))
+
+    # 이격익절 임계값 세트들(공격적→보수적). 평원이면 강건.
+    disp_sets = {
+        "홀딩(200MA)": None,
+        "이격 10/22/35": (0.10, 0.22, 0.35),
+        "이격 15/30/45": (0.15, 0.30, 0.45),   # 기존 채택 후보
+        "이격 20/35/50": (0.20, 0.35, 0.50),
+        "이격 25/42/60": (0.25, 0.42, 0.60),
+        "RSI 70/78/85": "rsi",                  # 비교용(RSI 기준)
+    }
+    out = {}
+    for nm, st in disp_sets.items():
+        if st is None:
+            e = np.where(above, 1.0, 0.0)
+        elif st == "rsi":
+            e = np.where(above, trim_by(rsi, 70, 78, 85), 0.0)
+        else:
+            e = np.where(above, trim_by(disp, *st), 0.0)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(dtype=float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+    return out
+
+
+def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
+    """[익절 비율·재진입 검증] (A) 단계당 익절 비율(5/10/15/20%) 중 칼마 최적은?
+    (B) 이격 회복 시 재진입을 '같은 임계'(휩쏘 위험) vs '히스테리시스(여유)' 중 뭐가 나은가.
+    임계는 20/35/50 고정. TQQQ·SOXL 둘 다 봐야 함. 회전율(turnover)로 휩쏘 비용도 확인."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index
+    TH = (0.20, 0.35, 0.50)
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def exposure(disp_arr, above_arr, cut, margin):
+        """단계 익절+재진입(히스테리시스). cut=단계당 익절비율, margin=재진입 여유(이격 %p).
+        level=적용된 익절 단계 수(0~3). 이격이 TH[level] 위로↑면 익절(level+1),
+        TH[level-1]-margin 아래로↓면 재진입(level-1)."""
+        n = len(disp_arr); expo = np.zeros(n); level = 0
+        for i in range(n):
+            d = disp_arr[i]
+            if not above_arr[i]:
+                expo[i] = 0.0; level = 0; continue
+            # 익절: 다음 임계 위로 올라가면 단계 상승
+            while level < 3 and d > TH[level]:
+                level += 1
+            # 재진입: 직전 임계 - margin 아래로 내려오면 단계 하강
+            while level > 0 and d < (TH[level - 1] - margin):
+                level -= 1
+            expo[i] = max(0.0, 1.0 - cut * level)
+        return expo
+
+    out = {"base": {}, "trim_sweep": {}, "reentry_sweep": {}}
+    # 기준: 홀딩(200MA)
+    sr, pos, turn, _ = _exec_returns(df, E(np.where(above, 1.0, 0.0)).to_numpy(float), cost_bps, expense)
+    out["base"] = _metrics(sr, pos, turn)
+    # (A) 익절 비율 sweep — 25/33%까지 넓혀 '끝없이 좋아지는지(과적합)' vs '정점 후 꺾이는지(진짜)' 확인
+    #     33%씩×3단계 = 사실상 과열 시 전량청산. 단조증가면 신호의 본질은 '과열=전량탈출'이라는 뜻.
+    for cut in (0.05, 0.10, 0.15, 0.20, 0.25, 0.33):
+        e = exposure(disp, above, cut, 0.0)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
+        out["trim_sweep"][f"{int(cut*100)}%씩"] = m
+    # (B) 재진입 여유(히스테리시스) sweep (익절=10% 고정)
+    for margin in (0.0, 0.05, 0.10):
+        e = exposure(disp, above, 0.10, margin)
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
+        lbl = "같은 임계(여유0)" if margin == 0 else f"여유 {int(margin*100)}%p"
+        out["reentry_sweep"][lbl] = m
+    # 신뢰도 진단: 익절이 실제로 '몇 번의 과열 사건'에 기대는가 (표본 두께)
+    d_above20 = (disp > 0.20) & above & ~warm
+    episodes = int(((d_above20) & ~(pd.Series(d_above20).shift(1).fillna(False).to_numpy())).sum())  # 20% 상향 돌파 횟수
+    days20 = int(d_above20.sum())
+    days35 = int(((disp > 0.35) & above & ~warm).sum())
+    days50 = int(((disp > 0.50) & above & ~warm).sum())
+    yrs = max(0.1, int((~warm).sum()) / 252)
+    out["reliability"] = {"episodes": episodes, "ep_per_yr": round(episodes / yrs, 1),
+                          "days20": days20, "days35": days35, "days50": days50,
+                          "total_bars": int((~warm).sum())}
+    return out
+
+
+def bear_research(df, cost_bps=5.0, expense=0.0095):
+    """[대세하락 검증] 역배열(50<200) 장기하락에서 '200MA 재돌파 재진입'이 휩쏘로 손해인지,
+    '정배열/200기울기 필터로 관망'이 나은지 검증. 전체 히스토리(2000~ 약세장 포함) 필요.
+    핵심: 역배열 구간만 떼어 각 규칙의 성과를 비교."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma50, sma200 = k["close"], k["sma50"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    align = (sma50 > sma200).to_numpy()                       # 정배열
+    rising = (sma200 > sma200.shift(20)).to_numpy()           # 200선 우상향(20일 기준)
+    bear = (sma50 < sma200).to_numpy() & ~warm                # 역배열 구간
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    variants = {
+        "200MA 단독": E(np.where(above, 1.0, 0.0)),
+        "정배열 필터": E(np.where(above & align, 1.0, 0.0)),
+        "200기울기 필터": E(np.where(above & rising, 1.0, 0.0)),
+        "정배열+기울기": E(np.where(above & align & rising, 1.0, 0.0)),
+    }
+    out = {}
+    bear_perf = {}
+    for nm, e in variants.items():
+        sr, pos, turn, _ = _exec_returns(df, e.to_numpy(dtype=float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+        # 역배열 구간만의 성과(보유 포지션은 직전봉 레짐 기준)
+        bmask = pd.Series(bear, index=idx).shift(1).fillna(False).astype(bool).to_numpy()
+        rb = sr.to_numpy()[bmask]
+        rb = rb[~np.isnan(rb)]
+        if len(rb) > 5:
+            eqb = np.cumprod(1 + rb)
+            mdd_b = float((eqb / np.maximum.accumulate(eqb) - 1).min() * 100)
+            bear_perf[nm] = {"ret": round((eqb[-1] - 1) * 100, 1), "mdd": round(mdd_b, 1), "days": int(len(rb))}
+        else:
+            bear_perf[nm] = {"ret": None, "mdd": None, "days": int(len(rb))}
+
+    # 진단: 역배열 비중, 역배열 중 200선 교차 횟수(휩쏘)
+    bear_days = int(bear.sum())
+    total_days = int((~warm).sum())
+    cross_in_bear = 0
+    av = above
+    for i in range(1, len(av)):
+        if bear[i] and av[i] != av[i - 1]:
+            cross_in_bear += 1
+    bear_yrs = max(0.1, bear_days / 252.0)
+    diag = {"bear_days": bear_days, "bear_pct": round(bear_days / max(1, total_days) * 100, 1),
+            "cross_in_bear_yr": round(cross_in_bear / bear_yrs, 1),
+            "period_start": str(df["date"].iloc[0]) if "date" in df.columns else None,
+            "period_end": str(df["date"].iloc[-1]) if "date" in df.columns else None}
+    return {"variants": out, "bear": bear_perf, "diag": diag}
+
+
+def breakdown_research(df):
+    """[하향돌파 후 이격 분포] 200선 하향돌파 후, 가격이 200선 대비 '얼마나 더 깊이' 빠졌다가
+    회복하는지의 분포. 패닉 기준(X% 이격)의 데이터 근거. 보통 -A%에서 반등, 드물게 -B%까지."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close = k["close"].to_numpy()
+    sma200 = k["sma200"].to_numpy()
+    warm = np.isnan(sma200)
+    above = close > sma200
+    dates = df["date"].tolist() if "date" in df.columns else list(range(len(df)))
+
+    episodes = []
+    i = 0
+    n = len(df)
+    while i < n:
+        if warm[i] or above[i]:
+            i += 1; continue
+        # 하향돌파 시작 (직전봉이 위였거나 워밍업 직후)
+        start = i
+        trough = 0.0
+        while i < n and not warm[i] and not above[i]:
+            d = (close[i] / sma200[i] - 1.0) * 100
+            if d < trough:
+                trough = d
+            i += 1
+        recovered = (i < n and above[i])   # 200선 위로 회복하며 종료했나
+        episodes.append({"start": str(dates[start]), "trough": float(round(trough, 1)),
+                         "duration": int(i - start), "recovered": bool(recovered)})
+
+    troughs = sorted([e["trough"] for e in episodes])   # 음수, 오름차순(깊은 게 앞)
+    durs = sorted([e["duration"] for e in episodes])
+    def pct(arr, q):
+        if not arr: return None
+        idx = min(len(arr) - 1, int(round(q / 100 * (len(arr) - 1))))
+        return float(arr[idx])
+    # trough는 음수라 '깊이' 백분위: 90%깊이 = 하위10%(가장 깊은 쪽)
+    summary = {
+        "n": len(episodes),
+        "median": pct(troughs, 50),
+        "p75_depth": pct(troughs, 25),   # 더 깊은 25% 경계
+        "p90_depth": pct(troughs, 10),   # 더 깊은 10% 경계
+        "worst": float(troughs[0]) if troughs else None,
+        "dur_median": pct(durs, 50),
+        "dur_max": int(durs[-1]) if durs else None,
+    }
+    deepest = sorted(episodes, key=lambda e: e["trough"])[:12]   # 가장 깊었던 사건들
+    return {"summary": summary, "episodes": deepest}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -322,8 +538,13 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     rp = regime_perf(df, p, cost_bps, expense)
     roll = rolling_series(df, p, cost_bps, expense)
     mar, entry_diag = entry_research(df, cost_bps, expense)
+    exitr = exit_research(df, cost_bps, expense)
+    reentry = exit_reentry_research(df, cost_bps, expense)
+    bearr = bear_research(df, cost_bps, expense)
+    breakdown = breakdown_research(df)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
-            "entry_diag": entry_diag,
+            "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
+            "bear_research": bearr, "breakdown_research": breakdown,
             "cost_bps": cost_bps, "expense": expense}

@@ -79,13 +79,18 @@ def _from_yahoo(ticker: str, interval: str = "1day", yrange: str = None) -> pd.D
            "Accept-Language": "en-US,en;q=0.9",
            "Referer": "https://finance.yahoo.com/"}
     last = None
+    use_period = (rng == "max")             # 전체 히스토리는 기간 지정이 range=max보다 안정적
+    p1 = 915148800                          # 1999-01-01 (QQQ 상장 전후)
+    import time as _t
+    p2 = int(_t.time())
     for attempt in range(2):                       # 429면 한 번 더(호스트 교차)
         for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
             try:
+                params = ({"period1": p1, "period2": p2, "interval": iv, "includePrePost": "false"}
+                          if use_period else
+                          {"range": rng, "interval": iv, "includePrePost": "false"})
                 r = requests.get(f"https://{host}/v8/finance/chart/{ticker}",
-                                 params={"range": rng, "interval": iv,
-                                         "includePrePost": "false"},
-                                 headers=hdr, timeout=12)
+                                 params=params, headers=hdr, timeout=15)
                 if r.status_code == 429:
                     last = "HTTP 429"; continue
                 if r.status_code != 200:
@@ -194,10 +199,16 @@ def daily_ohlcv(ticker: str, yrange: str = "3y", interval: str = "1day") -> tupl
         osize = {"2y": 520, "3y": 780, "5y": 1300, "10y": 2600, "max": 5000}.get(yrange, 780)
     else:
         osize = 600 if interval == "1week" else 360
-    sources = [("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
-               ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
+    # 클라우드(Render) IP는 Yahoo/Stooq(IP 스크래핑)를 점점 차단함 → 키 기반 Twelve Data를 1순위로.
+    sources = [("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval)),
+               ("Yahoo", lambda: _from_yahoo(ticker, interval, yrange))]
     if interval == "1day":
-        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 마지막 폴백(일봉만, 전체 히스토리)
+        sources.append(("Stooq", lambda: _from_stooq(ticker)))  # 일봉만, 전체 히스토리
+        if yrange == "max":
+            # 전체 히스토리(2000~)는 Twelve Data가 5000봉≈2006에서 잘림 → Stooq/Yahoo 우선, Twelve 최후.
+            sources = [("Stooq", lambda: _from_stooq(ticker)),
+                       ("Yahoo", lambda: _from_yahoo(ticker, interval, yrange)),
+                       ("Twelve Data", lambda: _from_twelvedata(ticker, osize, interval))]
     for name, fn in sources:
         try:
             df = fn()

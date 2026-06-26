@@ -102,11 +102,75 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
         big = sorted(((comp[x], x) for x in ("이격", "낙폭", "급락", "자금흐름", "매크로")), reverse=True)
         rationale.append("급성 리스크: " + ", ".join("%s" % x for v, x in big if v > 0.2))
 
+    # ── 검증된 익절 플랜 (200일선 이격도 단계별 익절: 20/35/50% → 보유 90/80/70%) ──
+    # 백테스트로 TQQQ·SOXL 둘 다 평원 검증됨. 200선 아래=현금, 위=홀딩, 과열=일부 익절(핵심 70% 유지).
+    DISP_STEPS = [(0.20, 0.10), (0.35, 0.10), (0.50, 0.10)]   # (이격 임계, 단계 익절비율)
+    if sma200 == sma200 and sma200 > 0:
+        disp = (c - sma200) / sma200            # 현재 이격도(분수)
+        cl_s = k["close"]; above_s = (cl_s > k["sma200"])
+        entry_signal = False; days_above = 0
+        if above200 and len(above_s) > 6:
+            entry_signal = bool((~above_s.iloc[-6:-1]).any())   # 직전 5봉 중 아래였던 적 → 재돌파
+            for v in reversed(above_s.tolist()):
+                if v: days_above += 1
+                else: break
+        # 재진입 신호: 최근 10봉 내 과열(이격>20%)로 익절했다가 지금 이격이 그 아래로 회복 → 덜어낸 비중 되넣기 구간
+        reentry_signal = False
+        if above200:
+            disp_s = (cl_s / k["sma200"] - 1.0)
+            recent = disp_s.iloc[-11:-1] if len(disp_s) > 11 else disp_s.iloc[:-1]
+            reentry_signal = bool((recent > 0.20).any() and disp < 0.20 and disp == disp)
+        # 권장 비중: 검증된 설정(익절 10%씩 + 재진입 여유 10%p 히스테리시스)을 경로 기반으로 계산.
+        # level=적용된 익절 단계(0~3). 이격이 임계 위로↑면 익절, (직전임계-여유) 아래로↓면 재진입.
+        TH = [0.20, 0.35, 0.50]; CUT = 0.10; MARGIN = 0.10
+        disp_arr = (cl_s / k["sma200"] - 1.0).to_numpy()
+        above_arr = above_s.to_numpy()
+        warm_arr = k["sma200"].isna().to_numpy()
+        level = 0
+        for i in range(len(disp_arr)):
+            if warm_arr[i]:
+                continue
+            if not above_arr[i]:
+                level = 0; continue
+            d = disp_arr[i]
+            while level < 3 and d > TH[level]:
+                level += 1
+            while level > 0 and d < (TH[level - 1] - MARGIN):
+                level -= 1
+        triggered = level
+        target = max(0.0, 1.0 - CUT * level) if above200 else 0.0
+        steps = []
+        for j, (th, cut) in enumerate(DISP_STEPS):
+            steps.append({"disparity": round(th * 100),
+                          "price": round(sma200 * (1 + th), 2),
+                          "trim_pct": round(cut * 100),
+                          "hit": bool(above200 and level > j)})
+        target_pct = int(round(target * 100))
+        exit_plan = {
+            "above200": bool(above200),
+            "price": round(c, 2),
+            "sma200": round(sma200, 2),
+            "disparity": round(disp * 100, 1),
+            "target_pct": target_pct,                 # 권장 보유비중(%)
+            "trim_total_pct": int(round((1 - target) * 100)) if above200 else None,  # 지금까지 누적 익절%
+            "steps": steps,
+            "stages_triggered": triggered,
+            "entry_signal": bool(entry_signal),
+            "reentry_signal": bool(reentry_signal),
+            "days_above": int(days_above),
+        }
+    else:
+        exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
+                     "disparity": None, "target_pct": None, "trim_total_pct": None,
+                     "steps": [], "stages_triggered": 0,
+                     "entry_signal": False, "reentry_signal": False, "days_above": 0}
+
     return {
         "risk": risk, "risk_label": rlabel, "components": {k_: round(comp[k_] * 100) for k_ in comp},
         "weights": {k_: W[k_] for k_ in W},
         "regime": regime, "size": int(size), "maxcap": int(p["maxcap"] * 100),
         "trend_factor": round(trend_factor, 2), "vol_factor": round(vt, 2),
+        "exit_plan": exit_plan,
         "metrics": {
             "rvol": round(rvol, 1) if rvol == rvol else None,
             "adx": round(adxv, 1) if adxv == adxv else None,
