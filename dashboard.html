@@ -67,6 +67,14 @@
   .ep-calc{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:var(--muted)}
   .ep-calc input{background:var(--panel2);border:1px solid var(--border);color:var(--ink);border-radius:3px;padding:4px 7px;font-family:var(--mono)}
   .card.exitplan{border-color:var(--accent)}
+  #panicCard{transition:border-color .3s}
+  #panicCard.panic-on{border-color:#ff3b46;animation:engGlowNeg 1.5s ease-in-out infinite}
+  .panic-cfg{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:4px 0 10px}
+  .panic-cfg label{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .panic-cfg input,.panic-cfg select{background:var(--panel2);border:1px solid var(--border);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px;padding:5px 8px}
+  .panic-cfg input{width:60px} .panic-cfg input.cash{width:96px}
+  .panic-cfg .lvgrp{display:inline-flex;gap:4px}
+  .panic-cfg input:focus,.panic-cfg select:focus{outline:none;border-color:var(--accent)}
   .enginerow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:stretch}
   .eng-panel{display:flex;flex-direction:column}
   .eng-sigrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
@@ -417,6 +425,7 @@
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
     <button data-s="cpat"><span class="sw" style="background:#B98AFF"></span>차트패턴</button>
     <button data-s="evt"><span class="sw" style="background:#E0A458"></span>이벤트</button>
+    <button data-s="disp"><span class="sw" style="background:#E0A458"></span>이격구간</button>
   </div>
   <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
@@ -495,16 +504,18 @@
       <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span></div>
       <div id="exitPlanBody"></div>
     </div>
-    <div class="card" id="panicCard" style="margin-bottom:10px;border-color:var(--stop)">
+    <div class="card" id="panicCard" style="margin-bottom:10px">
       <div class="lab">패닉 그리드 분할매수 <span class="hint" style="float:right">비상 시스템 · 엔진(200선 청산) 실패한 깊은 급락에서만 작동</span></div>
-      <div class="panic-cfg" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 8px">
-        <label style="font-size:11px;color:var(--muted)">예비현금($)</label>
-        <input id="panicCash" type="number" value="10000" step="1000" style="width:90px">
-        <label style="font-size:11px;color:var(--muted)">단계 이격(%)</label>
-        <input id="panicL1" type="number" value="-15" step="1" style="width:52px">
-        <input id="panicL2" type="number" value="-30" step="1" style="width:52px">
-        <input id="panicL3" type="number" value="-45" step="1" style="width:52px">
-        <label style="font-size:11px;color:var(--muted)">배분</label>
+      <div class="panic-cfg">
+        <label>예비현금($)</label>
+        <input id="panicCash" class="cash" type="number" value="10000" step="1000">
+        <label>단계 이격(%)</label>
+        <span class="lvgrp">
+          <input id="panicL1" type="number" value="-15" step="1">
+          <input id="panicL2" type="number" value="-30" step="1">
+          <input id="panicL3" type="number" value="-45" step="1">
+        </span>
+        <label>배분</label>
         <select id="panicAlloc"><option value="equal">균등(⅓씩)</option><option value="escal">심화(깊을수록↑)</option></select>
       </div>
       <div id="panicBody"></div>
@@ -711,7 +722,7 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',interval:'1day',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sma200:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false,evt:false},
+           vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false,evt:false,disp:false},
   patternMarkers:[],
   cpatMarkers:[],
   events:[],
@@ -750,6 +761,16 @@ function makeCharts(){
   S.donch_up=line('#5A6472',1); S.donch_low=line('#5A6472',1);
   S.ichi_conv=line('#26C6DA',1.2); S.ichi_base=line('#EF5350',1.2);
   S.ichi_spanA=line('#66BB6A',1); S.ichi_spanB=line('#AB47BC',1);
+  // 200MA 이격 구간 오버레이: 익절(+20/35/50 앰버), 재진입(+10/25/40 초록), 패닉(-15/30/45 빨강)
+  S.dispBands=[];
+  [[0.20,'#E0A458',2,'익절'],[0.35,'#E0A458',2,'익절'],[0.50,'#E0A458',2,'익절'],
+   [0.10,'#2bd07a',1,'재진입'],[0.25,'#2bd07a',1,'재진입'],[0.40,'#2bd07a',1,'재진입'],
+   [-0.15,'#ff3b46',2,'패닉'],[-0.30,'#ff3b46',2,'패닉'],[-0.45,'#ff3b46',2,'패닉']
+  ].forEach(([pct,col,style])=>{
+    const s=priceChart.addLineSeries({color:col,lineWidth:1,lineStyle:style,visible:false,
+      priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    S.dispBands.push({s,pct});
+  });
   oscChart=LightweightCharts.createChart(document.getElementById('osc'),{...common,height:170});
   const sync=(src,dst)=>src.timeScale().subscribeVisibleLogicalRangeChange(r=>{
     if(syncing||!r)return; syncing=true; dst.timeScale().setVisibleLogicalRange(r); syncing=false;});
@@ -770,6 +791,7 @@ function applyToggles(){
   [S.kelt_up,S.kelt_low].forEach(s=>s.applyOptions({visible:state.toggles.kelt}));
   [S.donch_up,S.donch_low].forEach(s=>s.applyOptions({visible:state.toggles.donch}));
   [S.ichi_conv,S.ichi_base,S.ichi_spanA,S.ichi_spanB].forEach(s=>s.applyOptions({visible:state.toggles.ichi}));
+  if(S.dispBands)S.dispBands.forEach(b=>b.s.applyOptions({visible:state.toggles.disp}));
   vol.applyOptions({visible:state.toggles.vol});
   updateMarkers();
 }
@@ -892,7 +914,10 @@ function renderPrice(d){
   {const c=d.candles||[],N=200,out=[];let sum=0;
     for(let i=0;i<c.length;i++){sum+=c[i].close;if(i>=N)sum-=c[i-N].close;
       if(i>=N-1)out.push({time:c[i].time,value:+(sum/N).toFixed(4)});}
-    S.sma200.setData(out);}
+    S.sma200.setData(out);
+    if(S.dispBands){S.dispBands.forEach(b=>b.s.setData(
+      out.map(o=>({time:o.time,value:+(o.value*(1+b.pct)).toFixed(4)}))));}
+  }
   S.sar.setData(d.sar);
   updateOscPulse(d);
   if(d.vwap)S.vwap.setData(d.vwap);
@@ -1592,7 +1617,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qb_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qc_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1607,7 +1632,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qb_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qc_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -1936,6 +1961,8 @@ function renderPanic(x){
   const disp=price?((price/sma200-1)*100):null;
   // 현재 패닉 상태
   const panicOn = disp!=null && disp <= lv[0];
+  const card=document.getElementById('panicCard');
+  if(card)card.classList.toggle('panic-on', !!panicOn);
   let banner;
   if(disp==null) banner="";
   else if(disp>0) banner="<div class='ep-now' style='color:var(--up)'><b>정상</b> — 200일선 위. 패닉 시스템 <b>비활성</b>. (엔진으로 운용)</div>";
