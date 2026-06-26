@@ -397,7 +397,7 @@ def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
     out["base"] = _metrics(sr, pos, turn)
     # (A) 익절 비율 sweep — 25/33%까지 넓혀 '끝없이 좋아지는지(과적합)' vs '정점 후 꺾이는지(진짜)' 확인
     #     33%씩×3단계 = 사실상 과열 시 전량청산. 단조증가면 신호의 본질은 '과열=전량탈출'이라는 뜻.
-    for cut in (0.05, 0.10, 0.15, 0.20, 0.25, 0.33):
+    for cut in (0.05, 0.10, 0.15, 0.18, 0.20, 0.25, 0.33):
         e = exposure(disp, above, cut, 0.0)
         sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
         m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
@@ -608,6 +608,56 @@ def dipentry_research(df, cost_bps=5.0, expense=0.0095):
     return {"variants": out, "diag": diag}
 
 
+def trim_regime_compare(df, cost_bps=5.0, expense=0.0095, split="2026-01-01"):
+    """[익절 비율 — 강세장 vs 정상장] 같은 익절 비율을 2026 포함(강세장)과 2026 제외(정상장)에서
+    각각 칼마 계산. '15%가 강세장 이득 > 정상장 손해인가'를 한눈에. 견고한 타협점 탐색."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    TH = (0.20, 0.35, 0.50)
+
+    def sweep(sub):
+        sub = sub.reset_index(drop=True)
+        kk = ST.indikit(sub)
+        close, sma200 = kk["close"], kk["sma200"]
+        warm = sma200.isna().to_numpy()
+        above = (close > sma200).to_numpy()
+        disp = (close / sma200 - 1.0).to_numpy()
+        idx = sub.index
+
+        def E(arr):
+            s = pd.Series(arr, index=idx, dtype=float)
+            s[pd.Series(warm, index=idx)] = np.nan
+            return s
+
+        def expo(cut):
+            n = len(disp); out = np.zeros(n); level = 0
+            for i in range(n):
+                if not above[i]:
+                    out[i] = 0.0; level = 0; continue
+                while level < 3 and disp[i] > TH[level]:
+                    level += 1
+                while level > 0 and disp[i] < TH[level - 1]:
+                    level -= 1
+                out[i] = max(0.0, 1.0 - cut * level)
+            return out
+        res = {}
+        for cut in (0.10, 0.15, 0.18, 0.20, 0.25, 0.33):
+            sr, pos, turn, _ = _exec_returns(sub, E(expo(cut)).to_numpy(float), cost_bps, expense)
+            m = _metrics(sr, pos, turn)
+            res[f"{int(cut*100)}%"] = {"calmar": m["calmar"], "total": m["total"], "mdd": m["mdd"]}
+        return res
+
+    full = sweep(df)
+    normal = sweep(df[df["date"] < split]) if (df["date"] >= split).any() else None
+    # 각 국면 최적 비율
+    def best(d):
+        return max(d.items(), key=lambda kv: kv[1]["calmar"])[0] if d else None
+    return {"ratios": ["10%", "15%", "18%", "20%", "25%", "33%"],
+            "full": full, "normal": normal, "split": split,
+            "best_full": best(full), "best_normal": best(normal),
+            "has_2026": normal is not None}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -623,9 +673,11 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     bearr = bear_research(df, cost_bps, expense)
     breakdown = breakdown_research(df)
     dipentry = dipentry_research(df, cost_bps, expense)
+    trim_regime = trim_regime_compare(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
+            "trim_regime": trim_regime,
             "cost_bps": cost_bps, "expense": expense}

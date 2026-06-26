@@ -677,6 +677,8 @@
     <div id="qBear"></div>
     <div class="qsub2">④ 익절 비율·재진입 검증 <span class="hint">단계당 익절 5/10/15/20% 중 칼마 최적은? 이격 회복 시 재진입을 같은 임계(휩쏘) vs 여유(히스테리시스) 어느 쪽이 나은지. 회전율로 휩쏘 비용도 확인</span></div>
     <div id="qReentry"></div>
+    <div class="qsub2">④-2 익절 비율 — 강세장 vs 정상장 <span class="hint">같은 익절 비율을 2026 포함(강세장)·제외(정상장)에서 각각 칼마 계산 → '15%가 강세장 이득 > 정상장 손해'인지 견고한 타협점 탐색. 검증 종료일 비우고(전체) 돌릴 것</span></div>
+    <div id="qTrimReg"></div>
     <div class="qsub2">⑤ 하향돌파 후 이격 분포 <span class="hint">200선 하향돌파 후 가격이 200선 대비 얼마나 더 깊이 빠졌다 회복하는지 — '패닉 타임' 기준(X% 이격)의 데이터 근거. 10년치로 돌릴 것</span></div>
     <div id="qBreak"></div>
     <div class="qsub2">⑥ 200선 아래 분할진입 검증 <span class="hint">200선 돌파 후 전량진입 vs 200선 아래 이격 단계서 분할매수 — 어느 쪽이 칼마 우위? 분할은 평단↓로 수익↑이나 깊은 하락 시 MDD↑. 신뢰도(하향돌파 횟수)도 함께 확인</span></div>
@@ -1534,6 +1536,37 @@ function renderQuant(d){
       h+="<div class='btnote' style='margin-top:6px'>칼마가 평원(다 비슷)이면 비율은 둔감 → 행동·심리 편한 값 선택 가능. 특정값만 튀면 과적합 의심. 회전/년이 높을수록 매매 잦음(휩쏘·세금↑). <b>재진입은 이미 백테스트에 반영됨</b>(이격 회복 시 비중 자동 복원) — 검증된 알파의 일부.</div>";
       document.getElementById('qReentry').innerHTML=h;
     }
+    // ④-2 익절 비율 — 강세장 vs 정상장
+    const tr=d.trim_regime;
+    if(tr&&tr.full){
+      const bf=tr.best_full, bn=tr.best_normal;
+      let h="<table class='wftab'><tr><th>익절 비율</th><th>강세장 칼마<br>(2026 포함)</th><th>정상장 칼마<br>(2026 제외)</th><th>강세 이득</th><th>정상 손해</th></tr>";
+      const bestF=Math.max(...tr.ratios.map(r=>(tr.full[r]||{}).calmar||-9));
+      const bestN=tr.normal?Math.max(...tr.ratios.map(r=>(tr.normal[r]||{}).calmar||-9)):null;
+      tr.ratios.forEach(r=>{
+        const f=(tr.full[r]||{}).calmar, n=tr.normal?(tr.normal[r]||{}).calmar:null;
+        const gain=(f!=null?(f-bestF):null);
+        const loss=(n!=null&&bestN!=null?(n-bestN):null);
+        const fCol=(r===bf)?"color:var(--go);font-weight:700":"";
+        const nCol=(r===bn)?"color:var(--go);font-weight:700":"";
+        h+="<tr"+((r==='15%'||r==='18%'||r==='20%')?" style='background:var(--accent-soft)'":"")+">"
+          +"<td><b>"+r+"</b></td>"
+          +"<td style='"+fCol+"'>"+(f!=null?f:'—')+(r===bf?" ★":"")+"</td>"
+          +"<td style='"+nCol+"'>"+(n!=null?n:'—')+(r===bn?" ★":"")+"</td>"
+          +"<td style='color:var(--faint)'>"+(gain!=null?gain.toFixed(2):'—')+"</td>"
+          +"<td style='color:var(--faint)'>"+(loss!=null?loss.toFixed(2):'—')+"</td></tr>";
+      });
+      h+="</table>";
+      if(!tr.has_2026){
+        h+="<div class='btnote' style='margin-top:6px;color:var(--caution)'>⚠ 2026 데이터가 없어 비교 불가(검증 종료일을 비우고 전체 기간으로 돌리세요).</div>";
+      }else{
+        h+="<div class='btnote' style='margin-top:6px'>★=각 국면 칼마 최적. <b>강세 이득</b>=강세장에서 그 국면 최적 대비 차이(0이면 강세장 최적), <b>정상 손해</b>=정상장 최적 대비 차이. "
+          +"낮은 익절(10~15%)이 강세장 이득은 크고 정상장 손해는 작으면 → <b>견고한 타협점</b>. "
+          +"강세장 최적 <b style='color:var(--go)'>"+bf+"</b>, 정상장 최적 <b style='color:var(--go)'>"+bn+"</b>. "
+          +"두 국면 손익을 합쳐 '어느 값이 어떤 장이 와도 덜 후회되는가'로 판단할 것(미니맥스).</div>";
+      }
+      document.getElementById('qTrimReg').innerHTML=h;
+    }
     // ⑤ 하향돌파 후 이격 분포
     const bd=d.breakdown_research;
     if(bd&&bd.summary){
@@ -1652,11 +1685,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qBreak','qDip'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qe_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qf_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1672,7 +1705,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qe_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qf_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
