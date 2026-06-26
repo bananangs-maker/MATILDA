@@ -1590,6 +1590,25 @@ function renderQuant(d){
         +"<b style='color:#E0A458'>90%깊이("+sm.p90_depth+"%)</b>를 넘어서면 통상 범위 밖 = '패닉 타임' 후보 기준. "
         +"이보다 더 빠지면 엔진(200선 청산)이 제때 작동 못한 비정상 상황 → 현금·분할매수 대응 구간. "
         +"단 표본 "+sm.n+"회는 적으니(약세장 부족) 절대기준 아닌 참고로.</div>";
+      // 이격구간별 반등 통계 (지지선 신뢰도)
+      if(bd.bands&&bd.bands.length){
+        h+="<div class='qsub2' style='margin-top:10px;font-size:11.5px'>이격구간별 반등 통계 <span class='hint'>각 이격(200선 대비)까지 빠진 후 거기서 멈췄나(반등) vs 더 깊이 갔나 · 지지선 신뢰도</span></div>";
+        h+="<table class='wftab'><tr><th>이격 밴드</th><th>도달 횟수</th><th>여기서 반등</th><th>더 깊이</th><th>회복률</th><th>평균 회복일</th></tr>";
+        bd.bands.forEach(x=>{
+          if(x.reached===0){h+="<tr style='opacity:.5'><td>"+x.band+"%</td><td>0</td><td colspan=4 style='color:var(--faint)'>도달 사례 없음</td></tr>";return;}
+          const br=x.bounce_rate, brCol=br>=60?'var(--go)':br>=40?'#E0A458':'var(--stop)';
+          h+="<tr><td><b>"+x.band+"%</b></td><td>"+x.reached+"회</td>"
+            +"<td style='color:"+brCol+";font-weight:700'>"+br+"%</td>"
+            +"<td style='color:var(--faint)'>"+x.deeper_rate+"%</td>"
+            +"<td style='color:var(--go)'>"+x.recover_rate+"%</td>"
+            +"<td>"+x.avg_recover_days+"일</td></tr>";
+        });
+        h+="</table>";
+        h+="<div class='btnote' style='margin-top:6px'><b>읽는 법</b> — <b>여기서 반등</b>=그 이격까지 빠진 뒤 더 깊이 안 가고 멈춘 비율(높을수록 강한 지지선). "
+          +"<b>더 깊이</b>=다음 밴드까지 내려간 비율. <b>회복률</b>=결국 200선 위로 돌아온 비율. "
+          +"이격구간 오버레이(차트 버튼)와 함께 보면, 어느 이격선이 역사적으로 잘 받쳐줬는지 보임. "
+          +"<span style='color:var(--caution)'>단 깊은 밴드는 도달 횟수가 적어 신뢰도 낮음.</span></div>";
+      }
       document.getElementById('qBreak').innerHTML=h;
     }
     // ⑥ 200선 아래 분할진입 검증
@@ -1689,7 +1708,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qf_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qg_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1705,7 +1724,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qf_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qg_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

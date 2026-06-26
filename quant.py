@@ -525,7 +525,35 @@ def breakdown_research(df):
         "dur_max": int(durs[-1]) if durs else None,
     }
     deepest = sorted(episodes, key=lambda e: e["trough"])[:12]   # 가장 깊었던 사건들
-    return {"summary": summary, "episodes": deepest}
+
+    # 이격구간별 반등 통계: 각 밴드(200선 대비 음수 이격)에서 역사적으로 어땠나.
+    # reached=그 깊이까지 간 사건 수, held=거기서 멈춤(더 깊이 안 감), 반등률=held/reached,
+    # 회복률=200선 위로 돌아온 비율, 평균회복일=그 깊이까지 간 사건의 평균 지속.
+    band_levels = [-10, -15, -20, -30, -45]
+    bands = []
+    for j, B in enumerate(band_levels):
+        deeper = band_levels[j + 1] if j + 1 < len(band_levels) else None
+        reached_eps = [e for e in episodes if e["trough"] <= B]
+        reached = len(reached_eps)
+        if deeper is not None:
+            deeper_cnt = sum(1 for e in episodes if e["trough"] <= deeper)
+            held = reached - deeper_cnt          # 이 밴드~다음 밴드 사이에서 멈춤(반등)
+        else:
+            deeper_cnt = 0
+            held = reached                       # 최심 밴드: 도달분 전체를 '여기 근처서 멈춤'으로
+        recovered_cnt = sum(1 for e in reached_eps if e["recovered"])
+        avg_days = (round(float(np.mean([e["duration"] for e in reached_eps])), 0)
+                    if reached_eps else None)
+        bands.append({
+            "band": B, "reached": reached,
+            "bounce_rate": round(held / reached * 100, 0) if reached else None,   # 여기서 멈출 확률
+            "deeper_rate": round(deeper_cnt / reached * 100, 0) if reached else None,  # 더 깊이 갈 확률
+            "recover_rate": round(recovered_cnt / reached * 100, 0) if reached else None,
+            "avg_recover_days": avg_days,
+        })
+
+    return {"summary": summary, "episodes": deepest, "bands": bands,
+            "total_breaks": len(episodes)}
 
 
 def dipentry_research(df, cost_bps=5.0, expense=0.0095):
