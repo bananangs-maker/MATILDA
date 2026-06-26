@@ -120,19 +120,31 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             disp_s = (cl_s / k["sma200"] - 1.0)
             recent = disp_s.iloc[-11:-1] if len(disp_s) > 11 else disp_s.iloc[:-1]
             reentry_signal = bool((recent > 0.20).any() and disp < 0.20 and disp == disp)
-        target = 1.0
-        triggered = 0
+        # 권장 비중: 검증된 설정(익절 10%씩 + 재진입 여유 10%p 히스테리시스)을 경로 기반으로 계산.
+        # level=적용된 익절 단계(0~3). 이격이 임계 위로↑면 익절, (직전임계-여유) 아래로↓면 재진입.
+        TH = [0.20, 0.35, 0.50]; CUT = 0.10; MARGIN = 0.10
+        disp_arr = (cl_s / k["sma200"] - 1.0).to_numpy()
+        above_arr = above_s.to_numpy()
+        warm_arr = k["sma200"].isna().to_numpy()
+        level = 0
+        for i in range(len(disp_arr)):
+            if warm_arr[i]:
+                continue
+            if not above_arr[i]:
+                level = 0; continue
+            d = disp_arr[i]
+            while level < 3 and d > TH[level]:
+                level += 1
+            while level > 0 and d < (TH[level - 1] - MARGIN):
+                level -= 1
+        triggered = level
+        target = max(0.0, 1.0 - CUT * level) if above200 else 0.0
         steps = []
-        for th, cut in DISP_STEPS:
-            hit = above200 and disp >= th
-            if hit:
-                target -= cut; triggered += 1
+        for j, (th, cut) in enumerate(DISP_STEPS):
             steps.append({"disparity": round(th * 100),
                           "price": round(sma200 * (1 + th), 2),
                           "trim_pct": round(cut * 100),
-                          "hit": bool(hit)})
-        if not above200:
-            target = 0.0
+                          "hit": bool(above200 and level > j)})
         target_pct = int(round(target * 100))
         exit_plan = {
             "above200": bool(above200),
