@@ -395,8 +395,9 @@ def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
     # 기준: 홀딩(200MA)
     sr, pos, turn, _ = _exec_returns(df, E(np.where(above, 1.0, 0.0)).to_numpy(float), cost_bps, expense)
     out["base"] = _metrics(sr, pos, turn)
-    # (A) 익절 비율 sweep (재진입=같은 임계, margin=0)
-    for cut in (0.05, 0.10, 0.15, 0.20):
+    # (A) 익절 비율 sweep — 25/33%까지 넓혀 '끝없이 좋아지는지(과적합)' vs '정점 후 꺾이는지(진짜)' 확인
+    #     33%씩×3단계 = 사실상 과열 시 전량청산. 단조증가면 신호의 본질은 '과열=전량탈출'이라는 뜻.
+    for cut in (0.05, 0.10, 0.15, 0.20, 0.25, 0.33):
         e = exposure(disp, above, cut, 0.0)
         sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
         m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
@@ -408,6 +409,16 @@ def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
         m = _metrics(sr, pos, turn); _t = turn.dropna(); m["turnover"] = round(float(_t.sum()) / max(1, len(_t)) * ANN, 1)
         lbl = "같은 임계(여유0)" if margin == 0 else f"여유 {int(margin*100)}%p"
         out["reentry_sweep"][lbl] = m
+    # 신뢰도 진단: 익절이 실제로 '몇 번의 과열 사건'에 기대는가 (표본 두께)
+    d_above20 = (disp > 0.20) & above & ~warm
+    episodes = int(((d_above20) & ~(pd.Series(d_above20).shift(1).fillna(False).to_numpy())).sum())  # 20% 상향 돌파 횟수
+    days20 = int(d_above20.sum())
+    days35 = int(((disp > 0.35) & above & ~warm).sum())
+    days50 = int(((disp > 0.50) & above & ~warm).sum())
+    yrs = max(0.1, int((~warm).sum()) / 252)
+    out["reliability"] = {"episodes": episodes, "ep_per_yr": round(episodes / yrs, 1),
+                          "days20": days20, "days35": days35, "days50": days50,
+                          "total_bars": int((~warm).sum())}
     return out
 
 

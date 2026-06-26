@@ -1470,6 +1470,13 @@ function renderQuant(d){
       };
       let h="<div class='btnote' style='margin:2px 0'>(A) 단계당 익절 비율 — 임계 20/35/50 고정, 재진입=같은 임계</div>";
       h+=tbl(rr.trim_sweep,"익절 비율");
+      const rl=rr.reliability;
+      if(rl){
+        h+="<div style='border:1px solid var(--border2);border-radius:3px;padding:7px 10px;margin:8px 0;font-size:11px;color:var(--muted)'>"
+          +"<b>신뢰도 진단</b> — 이 익절 알파가 기대는 '과열 사건' 수: <b style='font-family:var(--mono);color:var(--ink)'>"+rl.episodes+"회</b>("+rl.ep_per_yr+"회/년) · "
+          +"이격>20% <b>"+rl.days20+"일</b>, >35% <b>"+rl.days35+"일</b>, >50% <b>"+rl.days50+"일</b> / 총 "+rl.total_bars+"봉"
+          +"<div style='color:var(--faint);font-size:10px;margin-top:3px'>사건 수가 적으면(예: &lt;10회) 칼마가 높아도 우연일 수 있음. 특히 >50% 구간 일수가 한 자리면 그 단계는 사실상 검증 안 된 것.</div></div>";
+      }
       h+="<div class='btnote' style='margin:8px 0 2px'>(B) 이격 회복 시 재진입 방식 — 익절 10% 고정. 여유클수록 휩쏘↓(회전↓)이나 재진입 늦음</div>";
       h+=tbl(rr.reentry_sweep,"재진입 방식");
       h+="<div class='btnote' style='margin-top:6px'>칼마가 평원(다 비슷)이면 비율은 둔감 → 행동·심리 편한 값 선택 가능. 특정값만 튀면 과적합 의심. 회전/년이 높을수록 매매 잦음(휩쏘·세금↑). <b>재진입은 이미 백테스트에 반영됨</b>(이격 회복 시 비중 자동 복원) — 검증된 알파의 일부.</div>";
@@ -1539,7 +1546,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q7_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q8_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1554,7 +1561,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q7_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q8_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
