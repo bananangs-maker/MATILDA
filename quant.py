@@ -528,6 +528,86 @@ def breakdown_research(df):
     return {"summary": summary, "episodes": deepest}
 
 
+def dipentry_research(df, cost_bps=5.0, expense=0.0095):
+    """[200선 아래 분할진입 검증] 준호 가설: 200선 하향돌파 후 깊은 이격 구간에서 분할 매수하면
+    200선 상향돌파 시 전량진입보다 나은가. 비교: 전량(기준) vs 분할 A/B/C(이격 단계 다르게).
+    분할 규칙: 200선 위=100% 보유. 200선 아래=각 이격 단계 도달 시 1/3씩 누적 진입(평단 낮추기),
+    재상향돌파하면 100%. 깊은 약세장 표본이 적으니 신뢰도(하향돌파 횟수)도 함께 봄."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def full_expo():
+        """기준: 200선 위 100%, 아래 0% (현재 엔진)."""
+        return np.where(above, 1.0, 0.0)
+
+    def dip_expo(levels):
+        """200선 위=100%. 아래로 내려가며 levels(음수 이격 %, 깊을수록)에서 1/3씩 진입.
+        한번 잡은 비중은 더 깊어지면 추가(누적), 200선 위로 회복하면 100%로."""
+        n = len(disp); expo = np.zeros(n); held = 0.0
+        L = [l / 100.0 for l in levels]
+        for i in range(n):
+            if warm[i]:
+                expo[i] = 0.0; continue
+            if above[i]:
+                held = 1.0
+            else:
+                d = disp[i]
+                # 도달한 단계 수(깊을수록 더 많이 진입). 누적이라 더 깊어질 때만 증가.
+                reached = sum(1 for l in L if d <= l)
+                target = reached / 3.0
+                if target > held:      # 더 깊어졌으면 추가 매수(누적)
+                    held = target
+                # 반등해도 200선 아래선 줄이지 않음(분할 매수 후 보유)
+            expo[i] = held
+        return expo
+
+    variants = {
+        "전량(200선 돌파)": full_expo(),
+        "분할 A (-10/-20/-30)": dip_expo([-10, -20, -30]),
+        "분할 B (-15/-30/-45)": dip_expo([-15, -30, -45]),
+        "분할 C (-20/-35/-50)": dip_expo([-20, -35, -50]),
+    }
+    out = {}
+    for nm, e in variants.items():
+        sr, pos, turn, _ = _exec_returns(df, E(e).to_numpy(float), cost_bps, expense)
+        out[nm] = _metrics(sr, pos, turn)
+
+    # 신뢰도: 하향돌파 횟수 + 각 깊이 도달 횟수(분할 단계가 실제 몇 번 발동했나)
+    n_break = 0
+    for i in range(1, len(above)):
+        if not warm[i] and above[i - 1] and not above[i]:
+            n_break += 1
+    reach = {"−15%이상": 0, "−30%이상": 0, "−45%이상": 0}
+    troughs = []
+    i = 0
+    while i < len(df):
+        if warm[i] or above[i]:
+            i += 1; continue
+        tr = 0.0
+        while i < len(df) and not warm[i] and not above[i]:
+            if disp[i] < tr: tr = disp[i]
+            i += 1
+        troughs.append(tr * 100)
+    for t in troughs:
+        if t <= -15: reach["−15%이상"] += 1
+        if t <= -30: reach["−30%이상"] += 1
+        if t <= -45: reach["−45%이상"] += 1
+    diag = {"n_break": n_break, "reach": reach,
+            "median_trough": round(float(np.median(troughs)), 1) if troughs else None,
+            "worst_trough": round(float(min(troughs)), 1) if troughs else None}
+    return {"variants": out, "diag": diag}
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -542,9 +622,10 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     reentry = exit_reentry_research(df, cost_bps, expense)
     bearr = bear_research(df, cost_bps, expense)
     breakdown = breakdown_research(df)
+    dipentry = dipentry_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
-            "bear_research": bearr, "breakdown_research": breakdown,
+            "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
             "cost_bps": cost_bps, "expense": expense}

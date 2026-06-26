@@ -677,6 +677,8 @@
     <div id="qReentry"></div>
     <div class="qsub2">⑤ 하향돌파 후 이격 분포 <span class="hint">200선 하향돌파 후 가격이 200선 대비 얼마나 더 깊이 빠졌다 회복하는지 — '패닉 타임' 기준(X% 이격)의 데이터 근거. 10년치로 돌릴 것</span></div>
     <div id="qBreak"></div>
+    <div class="qsub2">⑥ 200선 아래 분할진입 검증 <span class="hint">200선 돌파 후 전량진입 vs 200선 아래 이격 단계서 분할매수 — 어느 쪽이 칼마 우위? 분할은 평단↓로 수익↑이나 깊은 하락 시 MDD↑. 신뢰도(하향돌파 횟수)도 함께 확인</span></div>
+    <div id="qDip"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1555,6 +1557,39 @@ function renderQuant(d){
         +"단 표본 "+sm.n+"회는 적으니(약세장 부족) 절대기준 아닌 참고로.</div>";
       document.getElementById('qBreak').innerHTML=h;
     }
+    // ⑥ 200선 아래 분할진입 검증
+    const de=d.dipentry_research;
+    if(de&&de.variants){
+      const base=de.variants['전량(200선 돌파)']||{};
+      const names=Object.keys(de.variants);
+      // 칼마 최고 변형 찾기(전량 포함)
+      let best=null,bestC=-1e9;
+      names.forEach(n=>{const c=de.variants[n].calmar; if(c>bestC){bestC=c;best=n;}});
+      let h="<table class='wftab'><tr><th>전략</th><th>칼마</th><th>총수익</th><th>MDD</th><th>vs 전량</th></tr>";
+      names.forEach(n=>{
+        const m=de.variants[n], isBase=(n==='전량(200선 돌파)');
+        const dCal=(m.calmar-(base.calmar||0));
+        const win=!isBase?(dCal>0?"<span style='color:var(--go)'>+"+dCal.toFixed(2)+"</span>":"<span style='color:var(--stop)'>"+dCal.toFixed(2)+"</span>"):"<span style='color:var(--faint)'>기준</span>";
+        const hl=(n===best)?" style='background:var(--accent-soft)'":(isBase?" style='background:rgba(255,255,255,.03)'":"");
+        h+="<tr"+hl+"><td>"+n+(n===best?" ★":"")+"</td><td><b>"+m.calmar+"</b></td><td>"+m.total+"%</td>"
+          +"<td class='neg'>"+m.mdd+"</td><td>"+win+"</td></tr>";
+      });
+      h+="</table>";
+      // 신뢰도 진단
+      const dg=de.diag||{}, rc=dg.reach||{};
+      h+="<div style='border:1px solid var(--border2);border-radius:3px;padding:8px 11px;margin-top:8px;font-size:11px'>"
+        +"<b>신뢰도 진단</b> — 하향돌파 <b>"+dg.n_break+"회</b>, 저점 중앙값 "+dg.median_trough+"% · 최악 "+dg.worst_trough+"%<br>"
+        +"<span style='color:var(--muted)'>분할 단계 실제 도달:</span> "
+        +"−15%↓ <b>"+(rc['−15%이상']||0)+"회</b> · −30%↓ <b>"+(rc['−30%이상']||0)+"회</b> · −45%↓ <b>"+(rc['−45%이상']||0)+"회</b></div>";
+      // 해석
+      const dipWins = best!=='전량(200선 돌파)';
+      h+="<div class='btnote' style='margin-top:6px'>";
+      if(dipWins) h+="<b style='color:var(--go)'>가설 지지</b> — 분할진입(<b>"+best+"</b>)이 전량보다 칼마 우위. 평단을 낮춰 회복 시 더 먹음. ";
+      else h+="<b style='color:var(--caution)'>가설 기각</b> — 이 데이터에선 전량진입이 칼마 우위. 분할은 총수익은 높아도 MDD가 더 커져 위험조정수익에선 밀림. ";
+      h+="<b>단, 깊은 단계(−45%↓)는 도달 "+(rc['−45%이상']||0)+"회</b>로 표본이 거의 없음 → 깊은 약세장(2000·2008)이 없는 구간이라 <b style='color:var(--caution)'>분할에 유리하게 편향</b>됐을 수 있음. "
+        +"총수익↑·MDD↑는 분할진입의 본질(평단↓ 대신 더 깊이 물림)이니, 칼마뿐 아니라 본인이 감당할 MDD인지로 판단할 것.</div>";
+      document.getElementById('qDip').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1615,11 +1650,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qBreak'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qBreak','qDip'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qd_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qe_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1634,7 +1669,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qd_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qe_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
