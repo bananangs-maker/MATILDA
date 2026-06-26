@@ -176,9 +176,19 @@ def quant_route(ticker):
             df, source = _load(ticker, "1day", long=False)
             note = "10년 데이터 차단(API 한도) → 3년 구간으로 분석. 200일선 워밍업 탓 유효구간이 짧으니 참고용."
         import quant as Q
+        # 검증 종료일 컷오프(비정상 구간 제외용). end=YYYY-MM-DD 이전 데이터만 사용.
+        end = (request.args.get("end") or "").strip()
+        if end:
+            before = len(df)
+            df = df[df["date"] <= end].reset_index(drop=True)
+            if len(df) < 260:
+                return jsonify({"error": f"종료일 {end} 이전 데이터가 부족합니다({len(df)}봉). 더 늦은 날짜를 쓰세요."}), 400
+            note = (note + " · " if note else "") + f"검증 종료일 {end} 적용({before}→{len(df)}봉, 이후 구간 제외)"
         res = Q.analyze(df, cost_bps=cost, expense=expense)
         res.pop("ret", None)  # 직렬화 불가 Series 제거(내부용)
         res["meta"] = {"ticker": ticker, "source": source, "bars": len(df)}
+        if end:
+            res["meta"]["end"] = end
         if note:
             res["meta"]["note"] = note
         return jsonify(res)

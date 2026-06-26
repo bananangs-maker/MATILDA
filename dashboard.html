@@ -660,6 +660,8 @@
       <select id="qCost"><option value="0">0</option><option value="5" selected>5</option><option value="10">10</option><option value="20">20</option></select>
       <label>운용보수(%/년)</label>
       <select id="qExp"><option value="0">0</option><option value="0.75">0.75</option><option value="0.95" selected>0.95</option></select>
+      <label title="이 날짜 이후 구간을 검증에서 제외(비정상 랠리 배제용). 비우면 전체.">검증 종료일</label>
+      <input type="date" id="qEnd" style="background:var(--panel2);border:1px solid var(--border);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:11px;padding:4px 6px">
       <button class="minibtn" id="qRun">백테스트 실행</button>
       <button class="minibtn" id="qCsvBtn" title="로컬에서 받은 전체 히스토리 CSV로 백테스트(2000~ 약세장 검증)">CSV 업로드 백테스트</button>
       <input type="file" id="qCsvFile" accept=".csv,.txt" style="display:none">
@@ -1663,9 +1665,10 @@ function restoreQuant(){
 }
 async function runQuant(){
   const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
+  const endEl=document.getElementById('qEnd'); const end=endEl&&endEl.value?endEl.value:'';
   const btn=document.getElementById('qRun');btn.disabled=true;btn.textContent='실행 중…';
   try{
-    const d=await safeJson(await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp));
+    const d=await safeJson(await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp+(end?'&end='+end:'')));
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
