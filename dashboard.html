@@ -495,6 +495,20 @@
       <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span></div>
       <div id="exitPlanBody"></div>
     </div>
+    <div class="card" id="panicCard" style="margin-bottom:10px;border-color:var(--stop)">
+      <div class="lab">패닉 그리드 분할매수 <span class="hint" style="float:right">비상 시스템 · 엔진(200선 청산) 실패한 깊은 급락에서만 작동</span></div>
+      <div class="panic-cfg" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 8px">
+        <label style="font-size:11px;color:var(--muted)">예비현금($)</label>
+        <input id="panicCash" type="number" value="10000" step="1000" style="width:90px">
+        <label style="font-size:11px;color:var(--muted)">단계 이격(%)</label>
+        <input id="panicL1" type="number" value="-15" step="1" style="width:52px">
+        <input id="panicL2" type="number" value="-30" step="1" style="width:52px">
+        <input id="panicL3" type="number" value="-45" step="1" style="width:52px">
+        <label style="font-size:11px;color:var(--muted)">배분</label>
+        <select id="panicAlloc"><option value="equal">균등(⅓씩)</option><option value="escal">심화(깊을수록↑)</option></select>
+      </div>
+      <div id="panicBody"></div>
+    </div>
     <div id="masonbody">
       <div class="stack">
         <div class="card">
@@ -1578,7 +1592,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qa_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qb_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1593,7 +1607,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qa_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qb_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -1908,6 +1922,42 @@ document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
 });
 
 /* ---------- 엔진 / 요약 게이지 / 크로스·캔들 렌더 ---------- */
+function renderPanic(x){
+  const box=document.getElementById('panicBody'); if(!box)return;
+  const sma200=x&&x.sma200, price=x&&x.price;
+  if(!sma200){box.innerHTML="<div class='none' style='font-size:11px;color:var(--faint)'>데이터 없음</div>";return;}
+  const cash=Math.max(0,parseFloat(document.getElementById('panicCash').value)||0);
+  let lv=[parseFloat(document.getElementById('panicL1').value),
+          parseFloat(document.getElementById('panicL2').value),
+          parseFloat(document.getElementById('panicL3').value)]
+          .map(v=>isNaN(v)?0:Math.min(0,v));           // 음수만(아래 이격)
+  const alloc=document.getElementById('panicAlloc').value;
+  const w = alloc==='escal' ? [0.25,0.35,0.40] : [1/3,1/3,1/3];
+  const disp=price?((price/sma200-1)*100):null;
+  // 현재 패닉 상태
+  const panicOn = disp!=null && disp <= lv[0];
+  let banner;
+  if(disp==null) banner="";
+  else if(disp>0) banner="<div class='ep-now' style='color:var(--up)'><b>정상</b> — 200일선 위. 패닉 시스템 <b>비활성</b>. (엔진으로 운용)</div>";
+  else if(!panicOn) banner="<div class='ep-now' style='color:var(--caution)'><b>200선 아래(이격 "+disp.toFixed(1)+"%)</b> — 아직 통상 범위. 엔진은 현금 권고. 1단계("+lv[0]+"%) 도달 전까지 대기.</div>";
+  else banner="<div class='ep-now' style='color:var(--stop)'><b>⚠ 패닉 구간(이격 "+disp.toFixed(1)+"%)</b> — 엔진 실패 영역. 아래 그리드대로 분할매수 검토.</div>";
+  // 단계 표
+  let rows="<table class='wftab' style='margin-top:8px'><tr><th>단계</th><th>트리거 이격</th><th>트리거가</th><th>투입현금</th><th>매수주수</th><th>상태</th></tr>";
+  lv.forEach((d,i)=>{
+    const trig=sma200*(1+d/100);
+    const c=cash*w[i];
+    const sh=trig>0?Math.floor(c/trig):0;
+    const hit = disp!=null && disp<=d;
+    const stat = hit?"<span style='color:var(--stop)'>도달 ▼</span>":"<span style='color:var(--faint)'>대기</span>";
+    rows+="<tr"+(hit?" style='background:rgba(224,50,43,.12)'":"")+"><td>"+(i+1)+"단계</td><td>"+d+"%</td>"
+      +"<td>$"+trig.toFixed(2)+"</td><td>$"+Math.round(c).toLocaleString()+"</td><td>"+sh+"주</td><td>"+stat+"</td></tr>";
+  });
+  rows+="</table>";
+  const note="<div class='btnote' style='margin-top:6px'><b>비상 시스템</b> — 평상시엔 200MA 엔진만 사용. 이건 200선 청산을 <b>못 한 채 급락이 깊어진 최악</b>의 경우만을 위한 별도 탄약. "
+    +"단계 이격 기본값은 ⑤ 하향돌파 분포 기준(TQQQ 75%깊이≈-15%, 90%깊이≈-47%). SOXL은 더 깊게(-10/-22/-32) 조정. "
+    +"<b style='color:var(--stop)'>탄약 유한</b>(예비현금만) — 다 쓰면 끝, 무한 물타기 금지. 역사적으로 하향돌파는 모두 회복했으나 최장 1년 가까이 물릴 수 있음.</div>";
+  box.innerHTML=banner+rows+note;
+}
 function renderExitPlan(x){
   const box=document.getElementById('exitPlanBody'); if(!box)return;
   if(!x){box.innerHTML="<div class='none' style='font-size:11px;color:var(--faint)'>데이터 없음</div>";return;}
@@ -1998,6 +2048,7 @@ function renderEngine(e){
   if(!e)return;
   renderEng200(e.exit_plan);
   renderExitPlan(e.exit_plan);
+  state._lastExitPlan=e.exit_plan; renderPanic(e.exit_plan);
   // 20-parameter engine 테두리: 고위험=빨강, 양호=초록
   const ec=document.getElementById('engClassic');
   if(ec){ec.classList.remove('pos','neg');
@@ -2255,7 +2306,9 @@ function renderRiskTools(){
       +"<div class='por'><span>제안 손절폭(2σ·3σ)</span><span class='pv' style='color:var(--stop)'>−"+s2+"% / −"+s3+"%</span></div>";
   }else stop.innerHTML="<div class='none'>차트 로딩 후 표시됩니다</div>";
 }
-(function(){const a=document.getElementById('psAcct'); if(a)a.oninput=()=>{renderPosSize();scheduleMason();};})();
+(function(){const a=document.getElementById('psAcct'); if(a)a.oninput=()=>{renderPosSize();scheduleMason();};
+  ['panicCash','panicL1','panicL2','panicL3','panicAlloc'].forEach(id=>{const el=document.getElementById(id);
+    if(el){const ev=el.tagName==='SELECT'?'onchange':'oninput'; el[ev]=()=>{renderPanic(state._lastExitPlan);scheduleMason();};}});})();
 
 /* ---------- 데크 메이슨리: 카드를 가장 짧은 컬럼에 채워 공백 최소화 ---------- */
 let _masonRO=null;
@@ -2391,7 +2444,7 @@ function initAlerts(){
   startAlerts();
 }
 buildMarketEvents();
-if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,180000);restoreQuant();restoreSeasonality();scheduleMason();}
+if(makeCharts()){setupOverlay();loadWatchlist();load();initAlerts();loadFngFull();loadMktTape();setInterval(loadMktTape,1800000);restoreQuant();restoreSeasonality();scheduleMason();}
 else{document.getElementById('status').className='status err';
   document.getElementById('status').textContent='차트 라이브러리 로드 실패(인터넷 연결 확인)';}
 </script>
