@@ -551,26 +551,40 @@
           <div class="fng-inds" id="fngIndicators"></div>
         </div>
       </div>
+      <div class="card sumcard">
+        <div class="lab">기술 요약 <span class="hint">26개 지표 종합 · 트레이딩뷰식</span></div>
+        <div class="gauges">
+          <div class="gauge"><div class="gtitle">오실레이터</div><div class="gbox" id="gOsc"></div><div class="grating" id="rOsc">—</div><div class="gcnt" id="cOsc"></div></div>
+          <div class="gauge"><div class="gtitle">요약</div><div class="gbox" id="gAll"></div><div class="grating" id="rAll">—</div><div class="gcnt" id="cAll"></div></div>
+          <div class="gauge"><div class="gtitle">이동평균</div><div class="gbox" id="gMa"></div><div class="grating" id="rMa">—</div><div class="gcnt" id="cMa"></div></div>
+        </div>
+        <div class="sumtabs">
+          <div class="sumtab"><h4>오실레이터</h4><div id="tOsc"></div></div>
+          <div class="sumtab"><h4>이동평균</h4><div id="tMa"></div></div>
+        </div>
+      </div>
       <div class="stack">
         <div class="card">
-          <div class="lab">신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></div>
-          <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
-            <button class="minibtn" id="alPerm">권한 요청</button>
-            <button class="minibtn" id="alNow">지금 점검</button></div>
-          <div class="alconds" id="alConds">
-            <label><input type="checkbox" data-c="t0" checked> 리스크 급등(T0)</label>
-            <label><input type="checkbox" data-c="ma200" checked> 200일선 이탈/회복</label>
-            <label><input type="checkbox" data-c="cross" checked> 골든·데드 크로스</label>
-            <label><input type="checkbox" data-c="rsi" checked> RSI 과매수/과매도</label>
-            <label><input type="checkbox" data-c="crash" checked> 급락 감지</label>
-          </div>
-          <div class="alrow2">
-            <label class="alsw"><input type="checkbox" id="alSound" checked> 소리</label>
-            <span>주기</span>
-            <select id="alInterval"><option value="5">5분</option><option value="10" selected>10분</option><option value="15">15분</option><option value="30">30분</option></select>
-            <span class="hint" id="alRiskTh"></span>
-          </div>
-          <div class="allog" id="alLog"></div>
+          <details id="alBox">
+            <summary>신호 알림 <span id="alStatus" style="float:right;font-size:9.5px;color:var(--faint)">꺼짐</span></summary>
+            <div class="alrow"><label class="alsw"><input type="checkbox" id="alOn"> 알림 켜기</label>
+              <button class="minibtn" id="alPerm">권한 요청</button>
+              <button class="minibtn" id="alNow">지금 점검</button></div>
+            <div class="alconds" id="alConds">
+              <label><input type="checkbox" data-c="t0" checked> 리스크 급등(T0)</label>
+              <label><input type="checkbox" data-c="ma200" checked> 200일선 이탈/회복</label>
+              <label><input type="checkbox" data-c="cross" checked> 골든·데드 크로스</label>
+              <label><input type="checkbox" data-c="rsi" checked> RSI 과매수/과매도</label>
+              <label><input type="checkbox" data-c="crash" checked> 급락 감지</label>
+            </div>
+            <div class="alrow2">
+              <label class="alsw"><input type="checkbox" id="alSound" checked> 소리</label>
+              <span>주기</span>
+              <select id="alInterval"><option value="5">5분</option><option value="10" selected>10분</option><option value="15">15분</option><option value="30">30분</option></select>
+              <span class="hint" id="alRiskTh"></span>
+            </div>
+            <div class="allog" id="alLog"></div>
+          </details>
         </div>
         <div class="card">
           <details id="setBox">
@@ -592,18 +606,6 @@
             </div>
             <button class="reset" id="setReset">기본값 복원</button>
           </details>
-        </div>
-      </div>
-      <div class="card sumcard">
-        <div class="lab">기술 요약 <span class="hint">26개 지표 종합 · 트레이딩뷰식</span></div>
-        <div class="gauges">
-          <div class="gauge"><div class="gtitle">오실레이터</div><div class="gbox" id="gOsc"></div><div class="grating" id="rOsc">—</div><div class="gcnt" id="cOsc"></div></div>
-          <div class="gauge"><div class="gtitle">요약</div><div class="gbox" id="gAll"></div><div class="grating" id="rAll">—</div><div class="gcnt" id="cAll"></div></div>
-          <div class="gauge"><div class="gtitle">이동평균</div><div class="gbox" id="gMa"></div><div class="grating" id="rMa">—</div><div class="gcnt" id="cMa"></div></div>
-        </div>
-        <div class="sumtabs">
-          <div class="sumtab"><h4>오실레이터</h4><div id="tOsc"></div></div>
-          <div class="sumtab"><h4>이동평균</h4><div id="tMa"></div></div>
         </div>
       </div>
       <div class="card">
@@ -1617,7 +1619,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qc_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qd_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1632,7 +1634,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qc_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qd_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
