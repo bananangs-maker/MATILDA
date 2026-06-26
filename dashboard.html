@@ -67,7 +67,12 @@
   .ep-calc{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:var(--muted)}
   .ep-calc input{background:var(--panel2);border:1px solid var(--border);color:var(--ink);border-radius:3px;padding:4px 7px;font-family:var(--mono)}
   .card.exitplan{border-color:var(--accent)}
-  .enginerow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start}
+  .enginerow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:stretch}
+  .eng-panel{display:flex;flex-direction:column}
+  .eng-sigrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .eng-sig{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:3px;border:1px solid;font-family:var(--mono)}
+  .eng-sig.pulse{animation:breathe 1.2s ease-in-out infinite}
+  .eng-spacer{flex:1}
   .topband2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:stretch}
   @media(max-width:900px){.enginerow,.topband2{grid-template-columns:1fr}}
   .eng-panel{border:1.5px solid var(--border)}
@@ -1546,7 +1551,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_q8_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_q9_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1561,7 +1566,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_q8_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_q9_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -1896,14 +1901,18 @@ function renderExitPlan(x){
   const shares=state.exitShares||'';
   let calc="<div class='ep-calc'><label>보유수량 <input type='number' id='exitShares' value='"+shares+"' placeholder='예: 100' style='width:90px'></label>"
     +"<span id='exitSharesOut' style='color:var(--muted);font-size:11px'></span></div>";
-  // 단계 표시
-  let rows="<table class='wftab' style='margin-top:8px'><tr><th>과열 단계</th><th>도달가</th><th>이 단계 익절</th><th>상태</th></tr>";
+  // 단계 표시 (익절가 + 재진입 되돌림가: 여유 10%p)
+  const MARGIN=10;
+  let rows="<table class='wftab' style='margin-top:8px'><tr><th>과열 단계</th><th>익절 도달가</th><th>이 단계 익절</th><th>재진입가(여유 10%p)</th><th>상태</th></tr>";
   x.steps.forEach(s=>{
-    const stat=s.hit?"<span style='color:"+C.amber+"'>도달 ✓</span>":"<span style='color:var(--faint)'>대기</span>";
-    rows+="<tr"+(s.hit?" style='background:var(--accent-soft)'":"")+"><td>이격 +"+s.disparity+"%</td><td>$"+s.price+"</td><td>보유의 "+s.trim_pct+"%</td><td>"+stat+"</td></tr>";
+    const stat=s.hit?"<span style='color:"+C.amber+"'>익절 ✓</span>":"<span style='color:var(--faint)'>대기</span>";
+    const reprice=x.sma200?("$"+(x.sma200*(1+(s.disparity-MARGIN)/100)).toFixed(2)):"—";
+    rows+="<tr"+(s.hit?" style='background:var(--accent-soft)'":"")+"><td>이격 +"+s.disparity+"%</td><td>$"+s.price+"</td><td>보유의 "+s.trim_pct+"%</td>"
+      +"<td style='color:var(--go)'>이격 +"+(s.disparity-MARGIN)+"% · "+reprice+"</td><td>"+stat+"</td></tr>";
   });
   rows+="</table>";
-  const note="<div class='btnote' style='margin-top:6px'>200일선 위 홀딩이 핵심. 과열(이격↑)일수록 단계별로 일부만 익절하고 <b>핵심 70%는 200선 깰 때까지 보유</b>. 백테스트로 TQQQ·SOXL 둘 다 검증된 규칙(칼마 개선·MDD 감소).</div>";
+  const note="<div class='btnote' style='margin-top:6px'>200일선 위 홀딩이 핵심. 과열(이격↑)일수록 단계별로 일부만 익절하고 <b>핵심 70%는 200선 깰 때까지 보유</b>. "
+    +"<b style='color:var(--go)'>재진입 여유 10%p 반영</b> — 익절 후 이격이 그 단계보다 10%p 더 내려오면(위 재진입가) 해당 비중 자동 복원(휩쏘 방지). 백테스트로 TQQQ·SOXL 둘 다 검증된 규칙.</div>";
   box.innerHTML=head+calc+rows+note;
   const inp=document.getElementById('exitShares'), out=document.getElementById('exitSharesOut');
   const upd=()=>{const n=parseFloat(inp.value);
@@ -1929,7 +1938,9 @@ function renderEng200(x){
     fill.style.width='0%'; fill.style.background=RED; fill.textContent='0%';
     extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'><span>현재가 $"+x.price+"</span>"
       +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
-      +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>";
+      +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>"
+      +"<div class='eng-sigrow'><span class='eng-sig pulse' style='color:"+RED+";border-color:"+RED+"'>■ 현금 — 보유 대상 아님</span></div>"
+      +"<div class='eng-spacer'></div>";
     return;
   }
   card.classList.add('pos');                           // 홀딩 = 초록 점멸
@@ -1939,12 +1950,21 @@ function renderEng200(x){
   det.textContent="200일선 위 — 추세 유효. 흔들리지 말고 보유 유지 (보유 "+x.days_above+"일째)"
     +(trimmed>0?" · 과열 익절 "+trimmed+"% 진행":"");
   fill.style.width=tgt+'%'; fill.style.background=trimmed>0?'#E0A458':GREEN; fill.textContent=tgt+'%';
+  // 점멸 신호 배지 (파라미터 엔진 칩 스타일 통일)
+  const AMBER='#E0A458'; let sigs=[];
+  if(x.entry_signal) sigs.push("<span class='eng-sig pulse' style='color:"+GREEN+";border-color:"+GREEN+";background:var(--accent-soft)'>● 진입 신호</span>");
+  if(x.reentry_signal) sigs.push("<span class='eng-sig pulse' style='color:"+GREEN+";border-color:"+GREEN+";background:var(--accent-soft)'>↻ 재진입 신호</span>");
+  if(trimmed>0) sigs.push("<span class='eng-sig pulse' style='color:"+AMBER+";border-color:"+AMBER+"'>▼ 익절 "+x.stages_triggered+"단계</span>");
+  if(!sigs.length) sigs.push("<span class='eng-sig' style='color:var(--muted);border-color:var(--border2)'>신호 없음 · 보유 유지</span>");
+  const sigRow="<div class='eng-sigrow'>"+sigs.join('')+"</div>";
   let entry="";
-  if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:8px'>● 진입 신호 — 최근 200선 재돌파. 추세 전환 확인, 진입 구간.</div>";
-  else if(x.reentry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:8px'>● 재진입 신호 — 과열(이격) 해소. 익절했던 비중 되넣어 100% 복원 구간.</div>";
+  if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:6px'>최근 200선 재돌파 — 추세 전환 확인, 진입 구간.</div>";
+  else if(x.reentry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:6px'>과열(이격) 해소 — 익절분 되넣어 비중 복원 구간.</div>";
   extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'>"
     +"<span>현재가 $"+x.price+"</span><span>200일선 $"+x.sma200+"</span>"
-    +"<span style='color:"+(x.disparity>=20?'#E0A458':GREEN)+"'>이격 +"+x.disparity+"%</span></div>"+entry
+    +"<span style='color:"+(x.disparity>=20?AMBER:GREEN)+"'>이격 +"+x.disparity+"%</span></div>"
+    +sigRow+entry
+    +"<div class='eng-spacer'></div>"
     +"<div class='btnote' style='margin-top:6px'>구체적 익절 주수·가격은 아래 <b>과열 분할 익절 플랜</b> 참고.</div>";
 }
 function renderEngine(e){
