@@ -89,20 +89,20 @@ def _from_tiingo(ticker: str, interval: str = "1day", yrange: str = None) -> pd.
     if not isinstance(j, list) or not j:
         raise RuntimeError("Tiingo: 빈 응답")
     df = pd.DataFrame(j)
-    # adjClose/adjOpen 등 조정가 우선(분할·배당 반영)
-    col = {"date": "date", "adjOpen": "open", "adjHigh": "high", "adjLow": "low",
-           "adjClose": "close", "adjVolume": "volume"}
-    if not all(c in df.columns for c in col):
-        col = {"date": "date", "open": "open", "high": "high", "low": "low",
-               "close": "close", "volume": "volume"}
-    df = df.rename(columns=col)
-    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-    if "volume" not in df.columns:
-        df["volume"] = 0
-    for c in ["open", "high", "low", "close", "volume"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    df = df[["date", "open", "high", "low", "close", "volume"]].dropna(subset=["close"])
-    return df.sort_values("date").reset_index(drop=True)
+    # 조정가(분할·배당 반영) 우선. rename은 원본 open/close와 컬럼명 충돌 → 직접 선택 구성.
+    use_adj = all(c in df.columns for c in ("adjOpen", "adjHigh", "adjLow", "adjClose"))
+    src = ("adjOpen", "adjHigh", "adjLow", "adjClose", "adjVolume") if use_adj \
+        else ("open", "high", "low", "close", "volume")
+    out = pd.DataFrame({
+        "date": pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d"),
+        "open": pd.to_numeric(df[src[0]], errors="coerce"),
+        "high": pd.to_numeric(df[src[1]], errors="coerce"),
+        "low": pd.to_numeric(df[src[2]], errors="coerce"),
+        "close": pd.to_numeric(df[src[3]], errors="coerce"),
+        "volume": pd.to_numeric(df[src[4]], errors="coerce") if src[4] in df.columns else 0,
+    })
+    out = out.dropna(subset=["close"])
+    return out.sort_values("date").reset_index(drop=True)
 
 
 def _from_alphavantage(ticker: str, interval: str = "1day", yrange: str = None) -> pd.DataFrame:
