@@ -464,24 +464,9 @@
     </div>
   </div>
   <div id="deckmason">
-    <div class="enginerow">
-      <div class="card final eng-panel" id="engClassic">
-        <div class="lab">20-parameter engine <span class="hint">기존 사이징 엔진 · 방어 강점/수익 약점(참고용)</span></div>
-        <div style="display:flex;align-items:center;gap:13px">
-          <div id="faceBox" style="width:56px;height:54px;flex:none"></div>
-          <div style="flex:1;min-width:0">
-            <div class="call" id="finalCall">—</div>
-            <div class="detail" id="finalDetail"></div>
-          </div>
-        </div>
-        <div class="sizebar"><div class="sizefill" id="sizefill" style="width:0%"></div><div class="ceiling" id="ceiling" style="left:100%"></div></div>
-        <div class="riskbar"><div class="riskfill" id="riskfill" style="width:0%"></div></div>
-        <div class="risklab" id="risklab"></div>
-        <div class="macrostat" id="macroStat"></div>
-        <div class="eng-metrics" id="engMetrics"></div>
-      </div>
+    <div class="enginerow" style="align-items:start">
       <div class="card eng-panel" id="eng200">
-        <div class="lab">200MA engine <span class="hint">검증된 코어 · 200선 홀딩/현금 + 과열 익절</span></div>
+        <div class="lab">200MA engine <span class="hint">검증된 코어 · 200선 홀딩/현금 + 과열 익절 + 역배열 관망</span></div>
         <div style="display:flex;align-items:center;gap:13px">
           <div id="eng200Face" style="width:56px;height:54px;flex:none"></div>
           <div style="flex:1;min-width:0">
@@ -491,15 +476,6 @@
         </div>
         <div class="sizebar"><div class="sizefill" id="eng200Fill" style="width:0%"></div></div>
         <div id="eng200Extra"></div>
-      </div>
-    </div>
-    <div class="topband2">
-      <div class="card">
-        <div class="lab">리스크 티어 <span class="hint">20-parameter engine 판정 분해</span></div>
-        <div class="row"><span class="k">T0 · 레짐</span><span class="v" id="vRegime">—</span></div>
-        <div class="row"><span class="k">T1·T2 · 추세</span><span class="v" id="vTrend">—</span></div>
-        <div class="row"><span class="k">T3 · 타이밍</span><span class="v" id="vTiming">—</span></div>
-        <div class="bbnote" id="bbnote">—</div>
       </div>
       <div class="card">
         <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
@@ -1071,34 +1047,6 @@ function decide(){
   const e=(state.data&&state.data.engine)||null;
   const St=state.settings;
   const ob=s.rsi>=St.rsiOB||s.mfi>=St.mfiOB;
-  const setV=(id,cls,t)=>{const el=document.getElementById(id);el.className='v '+(cls||'');el.textContent=t;};
-
-  // --- T0~T3는 엔진 종합판정에서 파생 (헤드라인과 정합 보장) ---
-  let regCls='', regLab='—', riskOff=false, trCls='', trLab='—', tmCls='', tmLab='—';
-  if(e){
-    if(e.risk>=60||(e.macro&&e.macro.hard)){regCls='RED';regLab='리스크-오프';riskOff=true;}
-    else if(e.risk>=35){regCls='AMBER';regLab='경계';}
-    else{regCls='GREEN';regLab='리스크-온';}
-    if(e.regime==='하락추세'){trCls='RED';trLab='롱 불가';}
-    else if(e.regime==='상승추세'){trCls='GREEN';trLab='롱 허가';}
-    else{trCls='AMBER';trLab='조건부';}
-    if(s.bbpos==='above'){tmCls='AMBER';tmLab=ob?'과열':'상단';}
-    else if(s.bbpos==='upper'){tmCls='GREEN';tmLab='보유';}
-    else if(s.bbpos==='mid'||s.bbpos==='lower'){tmCls='GREEN';tmLab='눌림목';}
-    else if(s.bbpos==='below'){tmCls='AMBER';tmLab='하단이탈';}
-    else{tmCls='GREEN';tmLab='중립';}
-  }
-  setV('vRegime',regCls,regLab);setV('vTrend',trCls,trLab);setV('vTiming',tmCls,tmLab);
-  const vr=document.getElementById('vRegime');
-  if(riskOff)vr.classList.add('risk-pulse');else vr.classList.remove('risk-pulse');
-
-  // bbnote: 엔진 기반 행동지침
-  let note;
-  if(riskOff)note='<b>고위험·리스크-오프:</b> 엔진이 비중 축소 권고. 신규 매수 보수적, 보유분 점검.';
-  else if(e&&e.regime==='하락추세')note='<b>하락추세:</b> 추격매수 금지. 반등 단타만, 빠른 손절.';
-  else note='<b>추세 유효:</b> 상단=분할익절, 하단~중심 눌림=분할 매수. 과매수는 매도신호 아님(밴드타기).';
-  document.getElementById('bbnote').innerHTML=note;
-
   // 경고 플래그 (엔진 + 기술적 경고)
   const fl=[];
   if(e&&e.macro&&e.macro.hard)fl.push(['danger','매크로 하드게이트',e.macro.hard+' → <b>엔진 비중 강제 축소</b>.']);
@@ -2236,37 +2184,6 @@ function renderEngine(e){
   renderEng200(e.exit_plan);
   renderExitPlan(e.exit_plan);
   state._lastExitPlan=e.exit_plan; renderPanic(e.exit_plan);
-  // 20-parameter engine 테두리: 고위험=빨강, 양호=초록
-  const ec=document.getElementById('engClassic');
-  if(ec){ec.classList.remove('pos','neg');
-    if(e.risk>=60)ec.classList.add('neg'); else if((e.size||0)>=Math.round((e.maxcap||80)*0.6))ec.classList.add('pos');}
-  const sz=e.size, cap=e.maxcap||80;
-  const f=document.getElementById('sizefill'); f.style.width=sz+'%'; f.textContent=sz+'%';
-  f.style.background=sz>=Math.round(cap*0.7)?C.up:sz>=20?C.amber:C.down;
-  document.getElementById('ceiling').style.left=cap+'%';
-  document.getElementById('faceBox').innerHTML=faceSVG(e.risk>=60?0.05:Math.max(0.05,sz/100));
-  const rf=document.getElementById('riskfill'); rf.style.width=e.risk+'%';
-  rf.style.background=e.risk>=60?C.down:e.risk>=35?C.amber:C.up;
-  document.getElementById('risklab').textContent='리스크 '+e.risk+' ('+e.risk_label+') · 레짐 '+e.regime;
-  applyEngineMacro(e.macro);
-  var ms=document.getElementById('macroStat');
-  if(ms){ var mm=e.macro||{};
-    if(mm.status==='missing'){ms.textContent='⚠ 매크로 미반영 — 새로고침';ms.style.color='var(--caution)';}
-    else{ms.textContent='매크로 반영'+(mm.hard?' · '+mm.hard:'');ms.style.color=mm.hard?'var(--stop)':'var(--faint)';}
-  }
-  document.getElementById('finalCall').textContent='권장 비중 '+sz+'% · 리스크 '+e.risk_label;
-  const ivlab={'1week':'주봉','1month':'월봉'}[state.interval];
-  const cav=ivlab?'⚠ '+ivlab+' 기준 재계산 — 엔진은 일봉 최적화 전략이라 참고용. ':'';
-  document.getElementById('finalDetail').textContent=cav+(e.rationale||[]).join(' · ');
-  const m=e.metrics||{}, chips=[];
-  if(m.rvol!=null)chips.push('실현변동성 '+m.rvol+'%');
-  if(m.adx!=null)chips.push('ADX '+m.adx);
-  chips.push('이격20 '+m.ext20+'%'); chips.push('낙폭 '+m.dd20+'%');
-  if(m.cmf!=null)chips.push('CMF '+m.cmf);
-  chips.push('200일선 '+(m.above200?'위':'아래'));
-  document.getElementById('engMetrics').innerHTML=chips.map(c=>'<span>'+c+'</span>').join('');
-  const fc=document.querySelector('.card.final');
-  if(e.risk>=60)fc.classList.add('risk-on'); else fc.classList.remove('risk-on');
 }
 function gaugeStatic(){
   return "<svg viewBox='0 0 200 116'>"
