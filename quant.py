@@ -197,17 +197,36 @@ def monte_carlo(strat_ret: pd.Series, n_sims=600, block=5, seed=7):
 
 
 def _baseline_exposures(df, p):
-    """복잡한 엔진의 가치를 검증하기 위한 단순 대안 비중들. 모두 전략과 같은 활성구간(200일선 형성 후)."""
+    """비교 대안 비중. '200MA engine'은 라이브 엔진(engine.py)과 동일: 200선 위 보유 + 과열 15%씩 익절
+    (이격 20/35/50단계, 재진입 여유 5%p). 'exposure_core'(20-parameter engine)는 메인 stats로 별도 표시."""
     k = ST.indikit(df)
     close, sma200, rvol = k["close"], k["sma200"], k["rvol"]
     warm = sma200.isna()
     maxcap = p["maxcap"]
-    ma = pd.Series(np.where(close > sma200, 1.0, 0.0), index=df.index)   # 200일선 위=풀투자, 아래=현금
-    vt = (p["target_vol"] / rvol).clip(p["vt_floor"], p["vt_cap"]).clip(upper=maxcap)  # 변동성타겟만
-    fixed = pd.Series(maxcap, index=df.index)                           # 상수 비중(=maxcap)
-    for s in (ma, vt, fixed):
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    warm_a = warm.to_numpy()
+
+    # 200MA engine = 라이브 코어 (200선 + 단계 익절 15% + 재진입 여유 5%p, 경로의존)
+    TH = (0.20, 0.35, 0.50); CUT = 0.15; MARG = 0.05
+    eng = np.zeros(len(close)); level = 0
+    for i in range(len(close)):
+        if warm_a[i] or not above[i]:
+            eng[i] = 0.0; level = 0; continue
+        d = disp[i]
+        while level < 3 and d > TH[level]:
+            level += 1
+        while level > 0 and d < (TH[level - 1] - MARG):
+            level -= 1
+        eng[i] = max(0.0, 1.0 - CUT * level)
+    eng200 = pd.Series(eng, index=df.index)
+
+    ma = pd.Series(np.where(above, 1.0, 0.0), index=df.index)            # 순수 200선(참고)
+    vt = (p["target_vol"] / rvol).clip(p["vt_floor"], p["vt_cap"]).clip(upper=maxcap)
+    fixed = pd.Series(maxcap, index=df.index)
+    for s in (eng200, ma, vt, fixed):
         s[warm] = np.nan
-    return {"200MA 필터": ma, "변동성타겟": vt, "고정비중": fixed}
+    return {"200MA engine": eng200, "200MA 단순": ma, "변동성타겟": vt, "고정비중": fixed}
 
 
 def baselines(df, p, cost_bps=5.0, expense=0.0095):

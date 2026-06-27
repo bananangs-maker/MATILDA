@@ -686,7 +686,7 @@
     <div id="qDip"></div>
     <div class="qsub2">⑦ 장기 약세장 검증 <span class="hint">기초지수(QQQ 등)에 엔진 적용 → 닷컴·금융위기에서 작동하나. 1배+×3합성. ※ QQQ로 'max 기간' 체크 후 돌릴 것 (TQQQ/SOXL은 2010년생이라 약세장 없음)</span></div>
     <div id="qBear"></div>
-    <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
+    <div class="qsub2">두 엔진 + 베이스라인 비교 <span class="hint">200MA engine(라이브 코어) vs 20-parameter engine(옛 복잡 엔진) vs 단순 규칙 — 위험조정(샤프·칼마)으로</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
     <div id="qRegime"></div>
@@ -735,6 +735,7 @@ const state={ticker:'TQQQ',range:'1Y',interval:'1day',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sma200:true,sar:false,vol:true,sig:true,
            vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false,evt:false,disp:false},
   patternMarkers:[],
+  bandStats:null,
   cpatMarkers:[],
   events:[],
   evtMarkers:[],
@@ -777,10 +778,10 @@ function makeCharts(){
   [[0.20,'#E0A458',2,'익절'],[0.35,'#E0A458',2,'익절'],[0.50,'#E0A458',2,'익절'],
    [0.10,'#2bd07a',1,'재진입'],[0.25,'#2bd07a',1,'재진입'],[0.40,'#2bd07a',1,'재진입'],
    [-0.15,'#ff3b46',2,'패닉'],[-0.30,'#ff3b46',2,'패닉'],[-0.45,'#ff3b46',2,'패닉']
-  ].forEach(([pct,col,style])=>{
+  ].forEach(([pct,col,style,kind])=>{
     const s=priceChart.addLineSeries({color:col,lineWidth:1,lineStyle:style,visible:false,
       priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    S.dispBands.push({s,pct});
+    S.dispBands.push({s,pct,kind});
   });
   oscChart=LightweightCharts.createChart(document.getElementById('osc'),{...common,height:170});
   const sync=(src,dst)=>src.timeScale().subscribeVisibleLogicalRangeChange(r=>{
@@ -805,6 +806,25 @@ function applyToggles(){
   if(S.dispBands)S.dispBands.forEach(b=>b.s.applyOptions({visible:state.toggles.disp}));
   vol.applyOptions({visible:state.toggles.vol});
   updateMarkers();
+  applyBandLabels();
+}
+function applyBandLabels(){
+  // 패닉(하단) 밴드 선 끝에 반등률 라벨. 통계는 백테스트(⑤)에서 저장됨.
+  if(!S||!S.dispBands)return;
+  const stats=state.bandStats; const on=state.toggles&&state.toggles.disp;
+  S.dispBands.forEach(b=>{
+    let title='';
+    if(on){
+      const p=Math.round(b.pct*100);
+      if(b.kind==='패닉'&&stats){
+        const m=stats.find(x=>x.band===p);
+        title=(m&&m.bounce_rate!=null)?(p+'% 반등'+m.bounce_rate+'%'):(p+'%');
+      }else{
+        title=(b.pct>0?'+':'')+p+'%';
+      }
+    }
+    b.s.applyOptions({title:title, lastValueVisible:(!!title&&on)});
+  });
 }
 const FOMC_DATES=['2025-01-29','2025-03-19','2025-05-07','2025-06-18','2025-07-30','2025-09-17','2025-10-29','2025-12-10',
   '2026-01-28','2026-03-18','2026-04-29','2026-06-17','2026-07-29','2026-09-16','2026-10-28','2026-12-09'];
@@ -1408,6 +1428,9 @@ function renderRollDD(roll){
 }
 function renderQuant(d){
     const s=d.stats;
+    // 이격밴드 오버레이 반등률 라벨용 통계 저장
+    state.bandStats=(d.breakdown_research&&d.breakdown_research.bands)||null;
+    if(typeof applyBandLabels==='function')applyBandLabels();
     document.getElementById('qPeriod').textContent=state.ticker+' · '+s.period+' · '+s.bars+'봉 · 비용'+s.cost_bps+'bps · 보수'+(s.expense*100).toFixed(2)+'%';
     const noteHtml=(d.meta&&d.meta.note)?"<div class='btnote' style='color:var(--caution);border:1px solid var(--border2);border-radius:3px;padding:6px 9px;margin-bottom:6px'>⚠ "+d.meta.note+"</div>":"";
     document.getElementById('qStats').innerHTML=noteHtml+
@@ -1679,18 +1702,17 @@ function renderQuant(d){
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
-      const order=['전략','200MA 필터','변동성타겟','고정비중','매수후보유'];
-      const rowOf=(nm,m)=>{
-        const best=nm==='전략';
+      const rowOf=(nm,m,best)=>{
         return "<tr"+(best?" style='background:var(--accent-soft)'":"")+"><td>"+nm+(best?" ★":"")+"</td>"
           +"<td class='"+(m.total>=0?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td>"
           +"<td>"+m.sharpe+"</td><td class='neg'>"+m.mdd+"%</td><td>"+(m.calmar||0)+"</td>"
           +"<td style='color:var(--faint)'>"+(m.avg_expo!=null?m.avg_expo+'%':'—')+"</td></tr>";};
-      let h="<table class='wftab cmptab'><tr><th>전략</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th></tr>";
-      h+=rowOf('전략',s);
-      ['200MA 필터','변동성타겟','고정비중'].forEach(nm=>{ if(bl[nm])h+=rowOf(nm,bl[nm]); });
-      h+=rowOf('매수후보유',{total:s.bh_total,sharpe:'—',mdd:s.bh_mdd,calmar:'—',avg_expo:100});
-      h+="</table><div class='btnote'>엔진(★)이 단순 규칙 대비 <b>위험조정(샤프·칼마·MDD)</b>에서 우위가 없다면 복잡성은 정당화되지 않습니다. 총수익만 보지 말 것.</div>";
+      let h="<table class='wftab cmptab'><tr><th>엔진/전략</th><th>총수익</th><th>샤프</th><th>MDD</th><th>칼마</th><th>평균노출</th></tr>";
+      h+=rowOf('20-parameter engine',s,false);
+      if(bl['200MA engine'])h+=rowOf('200MA engine',bl['200MA engine'],true);
+      [['200MA 단순','200MA 단순(익절 없음)'],['변동성타겟','변동성타겟'],['고정비중','고정비중']].forEach(([k,lab])=>{ if(bl[k])h+=rowOf(lab,bl[k],false); });
+      h+=rowOf('매수후보유',{total:s.bh_total,sharpe:'—',mdd:s.bh_mdd,calmar:'—',avg_expo:100},false);
+      h+="</table><div class='btnote'><b>200MA engine</b>(★)=우리 라이브 코어(200선+15%익절+5%p재진입). <b>20-parameter engine</b>=옛 복잡 엔진(변동성타겟·급성리스크로 노출↓→수익↓). 위험조정(샤프·칼마)으로 비교할 것.</div>";
       document.getElementById('qBase').innerHTML=h;
     }
     // 레짐별 조건부 성과
@@ -1740,7 +1762,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qi_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qk_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1757,7 +1779,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qi_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qk_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
