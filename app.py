@@ -114,6 +114,8 @@ def chart(ticker):
         df, source = _load(ticker, interval)
         payload = compute_series(df)
         payload["signals"] = compute_signals(df)
+        from indicators import divergence_panel
+        payload["divergence_panel"] = divergence_panel(df)
         import patterns as _pat0
         payload["markers"] = _pat0.detect_macd_markers(df)
         # 매크로(VIX·공포탐욕): 쿼리 오버라이드 우선, 없으면 서버 캐시(시장심리) 사용

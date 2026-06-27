@@ -112,6 +112,13 @@ def stoch(df: pd.DataFrame, k: int = 14, d: int = 3):
     return kf, kf.rolling(d).mean()
 
 
+def obv(df: pd.DataFrame) -> pd.Series:
+    """On-Balance Volume — 거래량 누적(상승일 +vol, 하락일 -vol). 다이버전스 판정용."""
+    ch = df["close"].diff()
+    sign = np.sign(ch).fillna(0.0)
+    return (sign * df["volume"]).fillna(0.0).cumsum()
+
+
 def williams_r(df: pd.DataFrame, period: int = 14) -> pd.Series:
     hh, ll = df["high"].rolling(period).max(), df["low"].rolling(period).min()
     return -100 * (hh - df["close"]) / (hh - ll).replace(0, np.nan)
@@ -219,6 +226,68 @@ def divergence(close: pd.Series, rsi_series: pd.Series, lookback: int = 40) -> s
 def _safe_last(series: pd.Series, default=np.nan):
     s = series.dropna()
     return float(s.iloc[-1]) if len(s) else default
+
+
+def divergence_panel(df: pd.DataFrame, lookback: int = 40) -> dict:
+    """다지표 다이버전스 + 가중 합의 + 과매수/과매도 현황.
+    가중치(중요도): RSI 1.0, MACD 1.0, 슬로우스토캐스틱 0.8, MFI 0.7, OBV 0.7.
+    합의 = Σ(부호×가중치), 강세=+, 약세=-. CCI는 노이즈로 다이버전스에서 제외."""
+    close = df["close"]
+    rsi14 = rsi(close, 14)
+    mline, _, _ = macd(close)
+    _, stoch_d = stoch(df)          # 슬로우 스토캐스틱 %D
+    mfi14 = mfi(df, 14)
+    obv_s = obv(df)
+    specs = [("RSI", rsi14, 1.0), ("MACD", mline, 1.0),
+             ("슬로우스토캐스틱", stoch_d, 0.8), ("MFI", mfi14, 0.7), ("OBV", obv_s, 0.7)]
+    divs = []
+    score = 0.0; maxw = 0.0; bull = 0; bear = 0
+    for name, ser, w in specs:
+        st = divergence(close, ser, lookback)
+        divs.append({"name": name, "weight": w, "state": st})
+        maxw += w
+        if st == "bull":
+            score += w; bull += 1
+        elif st == "bear":
+            score -= w; bear += 1
+    # 합의 라벨
+    if score <= -2.0:
+        clabel = "강한 약세 다이버전스"
+    elif score <= -0.9:
+        clabel = "약세 다이버전스"
+    elif score < 0.9:
+        clabel = "다이버전스 미미"
+    elif score < 2.0:
+        clabel = "강세 다이버전스"
+    else:
+        clabel = "강한 강세 다이버전스"
+
+    # 과매수/과매도 현황
+    def _state(v, ob, os_):
+        if v is None or v != v:
+            return "neutral", None
+        if v >= ob:
+            return "overbought", round(v, 1)
+        if v <= os_:
+            return "oversold", round(v, 1)
+        return "neutral", round(v, 1)
+    rsi_v = _safe_last(rsi14); mfi_v = _safe_last(mfi14)
+    stoch_v = _safe_last(stoch_d); cci_v = _safe_last(cci(df, 20)); wr_v = _safe_last(williams_r(df, 14))
+    oo = []
+    for nm, v, ob, os_ in [("RSI", rsi_v, 70, 30), ("MFI", mfi_v, 80, 20),
+                           ("스토캐스틱", stoch_v, 80, 20), ("CCI", cci_v, 100, -100),
+                           ("Williams %R", wr_v, -20, -80)]:
+        stt, val = _state(v, ob, os_)
+        oo.append({"name": nm, "value": val, "state": stt})
+    ob_n = sum(1 for x in oo if x["state"] == "overbought")
+    os_n = sum(1 for x in oo if x["state"] == "oversold")
+    return {
+        "divergences": divs,
+        "consensus": {"score": round(score, 1), "max": round(maxw, 1),
+                      "bull": bull, "bear": bear, "label": clabel},
+        "overbought_oversold": oo,
+        "ob_count": ob_n, "os_count": os_n,
+    }
 
 
 def compute_signals(df: pd.DataFrame) -> dict:

@@ -113,6 +113,20 @@
   .mtfrow .mtf-sz{font-family:var(--mono);color:var(--faint);font-size:10px;margin-left:auto}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:13px 14px;transition:border-color .15s}
   .card:hover{border-color:var(--border2)}
+  .dvgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.dvgrid{grid-template-columns:1fr}}
+  .dvhead{font-family:var(--disp);font-size:11.5px;font-weight:600;color:var(--ink);margin-bottom:7px;display:flex;align-items:center;gap:7px}
+  .dvrow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+  .dvrow:last-child{border-bottom:none}
+  .dvn{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .dvw{font-family:var(--mono);font-size:10.5px;color:var(--faint);min-width:34px;text-align:right}
+  .dvs{font-family:var(--mono);font-size:10.5px;font-weight:700;border:1px solid;border-radius:2px;padding:2px 8px;min-width:42px;text-align:center}
+  .dvconsensus{margin-top:10px;padding-top:9px;border-top:1px solid var(--border2)}
+  .dvclab{font-family:var(--disp);font-size:13px;font-weight:700;margin-bottom:6px}
+  .dvbar{position:relative;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .dvbar-mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--faint);z-index:2}
+  .dvbar-fill{position:absolute;top:0;bottom:0;border-radius:4px;transition:.4s}
+  .dvcnum{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:5px}
   /* 특별 테두리 패널은 hover에도 색 유지 (eng-panel·익절플랜·패닉그리드) */
   .card.eng-panel:hover{border-color:var(--border)}
   .eng-panel.pos:hover{border-color:#2bd07a}
@@ -482,6 +496,10 @@
         <div class="senti" id="fundPrice"></div>
         <div id="fundExtra"></div>
       </div>
+    </div>
+    <div class="card" id="diverCard" style="margin-bottom:10px">
+      <div class="lab">보조지표 종합 <span class="hint" style="float:right">다이버전스(가중 합의) + 과매수/과매도 현황 · 참고 신호(매매판단 아님)</span></div>
+      <div id="diverBody"></div>
     </div>
     <div class="card exitplan" id="exitPlanCard" style="margin-bottom:10px">
       <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 55% 홀딩 유지)</span></div>
@@ -984,7 +1002,7 @@ async function load(){
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
     state.markers=mk;
-    renderPrice(d); renderOsc(); decide(); loadDrawings();
+    renderPrice(d); renderOsc(); decide(); renderDivergence(d.divergence_panel); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
     renderChartPatternList(d.chart_patterns); renderChartPatterns();
@@ -1061,6 +1079,44 @@ function decide(){
   const box=document.getElementById('flags');
   box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 리스크 없음 — 신호 정렬 양호</div>';
   renderFlagTicker();
+}
+/* ---------- 보조지표 종합 패널 ---------- */
+function renderDivergence(d){
+  const box=document.getElementById('diverBody'); if(!box)return;
+  if(!d){box.innerHTML="<div class='btnote'>데이터 없음</div>";return;}
+  const GREEN='#2bd07a', RED='#ff3b46', GRAY='var(--muted)';
+  const c=d.consensus||{score:0,max:4.2,label:'—'};
+  // 합의 게이지: -max ~ +max, 음수=약세(빨강), 양수=강세(초록)
+  const frac=Math.max(-1,Math.min(1,(c.score||0)/(c.max||4.2)));
+  const pct=(frac*50); // -50%~+50% from center
+  const cColor=c.score<=-0.9?RED:c.score>=0.9?GREEN:GRAY;
+  const dv=(d.divergences||[]).map(x=>{
+    const col=x.state==='bear'?RED:x.state==='bull'?GREEN:GRAY;
+    const lab=x.state==='bear'?'약세':x.state==='bull'?'강세':'없음';
+    return "<div class='dvrow'><span class='dvn'>"+x.name+"</span>"
+      +"<span class='dvw'>×"+x.weight+"</span>"
+      +"<span class='dvs' style='color:"+col+";border-color:"+col+"'>"+lab+"</span></div>";
+  }).join('');
+  const oo=(d.overbought_oversold||[]).map(x=>{
+    const col=x.state==='overbought'?RED:x.state==='oversold'?GREEN:GRAY;
+    const lab=x.state==='overbought'?'과매수':x.state==='oversold'?'과매도':'중립';
+    return "<div class='dvrow'><span class='dvn'>"+x.name+"</span>"
+      +"<span class='dvw'>"+(x.value==null?'—':x.value)+"</span>"
+      +"<span class='dvs' style='color:"+col+";border-color:"+col+"'>"+lab+"</span></div>";
+  }).join('');
+  box.innerHTML=
+    "<div class='dvgrid'>"
+    +"<div class='dvcol'><div class='dvhead'>다이버전스 <span class='hint'>가격 vs 모멘텀 괴리</span></div>"
+      +dv
+      +"<div class='dvconsensus'><div class='dvclab' style='color:"+cColor+"'>"+c.label+"</div>"
+      +"<div class='dvbar'><div class='dvbar-mid'></div><div class='dvbar-fill' style='background:"+cColor+";"
+        +(frac<0?("right:50%;width:"+Math.abs(pct)+"%"):("left:50%;width:"+pct+"%"))+"'></div></div>"
+      +"<div class='dvcnum'>합의 "+(c.score>0?'+':'')+c.score+" / ±"+c.max+" · 강세 "+c.bull+" 약세 "+c.bear+"</div></div>"
+    +"</div>"
+    +"<div class='dvcol'><div class='dvhead'>과매수 / 과매도 <span class='hint'>과매수 "+d.ob_count+" · 과매도 "+d.os_count+"</span></div>"
+      +oo
+    +"</div>"
+    +"</div>";
 }
 /* ---------- 관심종목 + 종목 검색 ---------- */
 const PINNED=['TQQQ','SOXL'];
