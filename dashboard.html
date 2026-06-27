@@ -1771,7 +1771,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qn_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qo_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1788,7 +1788,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qn_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qo_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -2201,6 +2201,20 @@ function renderEng200(x){
       +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>"
       +"<div class='eng-sigrow'><span class='eng-sig pulse' style='color:"+RED+";border-color:"+RED+"'>■ 현금 — 보유 대상 아님</span></div>"
       +"<div class='eng-spacer'></div>";
+    return;
+  }
+  if(x.watch_mode){
+    card.classList.add('neg');                           // 역배열 관망 = 빨강 점멸
+    face.innerHTML=faceSVG(0.85,RED);
+    call.innerHTML="<span style='color:"+RED+"'>역배열 관망</span> · 권장 비중 0%";
+    det.textContent="200선 위지만 역배열(50<200)+200선 하락 — 약세 국면. 관망(현금) 권고.";
+    fill.style.width='0%'; fill.style.background=RED; fill.textContent='0%';
+    extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'><span>현재가 $"+x.price+"</span>"
+      +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
+      +(x.disparity!=null?"<span>이격 "+x.disparity+"%</span>":"")+"</div>"
+      +"<div class='eng-sigrow'><span class='eng-sig pulse' style='color:"+RED+";border-color:"+RED+"'>⚠ 역배열 관망</span></div>"
+      +"<div class='eng-spacer'></div>"
+      +"<div class='btnote' style='margin-top:6px'>50일선<200일선 + 200선 하락 = 대세하락 신호. 검증상 이 구간 회피가 역배열 MDD를 크게 줄임.</div>";
     return;
   }
   card.classList.add('pos');                           // 홀딩 = 초록 점멸

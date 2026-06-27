@@ -139,6 +139,15 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
                 level -= 1
         triggered = level
         target = max(0.0, 1.0 - CUT * level) if above200 else 0.0
+        # 역배열 기울기전환: 역배열(50<200)이면서 200선이 우하향(20일 전보다↓)이면 관망(현금).
+        # 정배열 구간은 영향 없음(200MA 코어 그대로). 검증: TQQQ·QQQ·SOXL 전체 칼마↑·역배열 MDD↓.
+        sma50_s = k.get("sma50")
+        bear_now = bool(sma50_s is not None and sma50_s.iloc[-1] < k["sma200"].iloc[-1])
+        s200 = k["sma200"]
+        rising_now = bool(len(s200) > 20 and s200.iloc[-1] > s200.iloc[-21])
+        watch_mode = bool(above200 and bear_now and not rising_now)
+        if watch_mode:
+            target = 0.0
         steps = []
         for j, (th, cut) in enumerate(DISP_STEPS):
             steps.append({"disparity": round(th * 100),
@@ -158,12 +167,13 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             "entry_signal": bool(entry_signal),
             "reentry_signal": bool(reentry_signal),
             "days_above": int(days_above),
+            "watch_mode": watch_mode,
         }
     else:
         exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
                      "disparity": None, "target_pct": None, "trim_total_pct": None,
                      "steps": [], "stages_triggered": 0,
-                     "entry_signal": False, "reentry_signal": False, "days_above": 0}
+                     "entry_signal": False, "reentry_signal": False, "days_above": 0, "watch_mode": False}
 
     return {
         "risk": risk, "risk_label": rlabel, "components": {k_: round(comp[k_] * 100) for k_ in comp},

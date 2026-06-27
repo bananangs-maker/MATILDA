@@ -206,12 +206,16 @@ def _baseline_exposures(df, p):
     above = (close > sma200).to_numpy()
     disp = (close / sma200 - 1.0).to_numpy()
     warm_a = warm.to_numpy()
+    # 역배열 기울기전환용: 역배열(50<200) & 200선 하락이면 관망(현금)
+    bear_a = (k["sma50"] < sma200).to_numpy()
+    rising_a = (sma200 > sma200.shift(20)).to_numpy()
+    watch_a = bear_a & ~rising_a   # 역배열+하락 = 관망
 
-    # 200MA engine = 라이브 코어 (200선 + 단계 익절 15% + 재진입 여유 5%p, 경로의존)
+    # 200MA engine = 라이브 코어 (200선 + 단계 익절 15% + 재진입 여유 5%p, 경로의존) + 역배열 관망
     TH = (0.25, 0.42, 0.60); CUT = 0.15; MARG = 0.05
     eng = np.zeros(len(close)); level = 0
     for i in range(len(close)):
-        if warm_a[i] or not above[i]:
+        if warm_a[i] or not above[i] or watch_a[i]:
             eng[i] = 0.0; level = 0; continue
         d = disp[i]
         while level < 3 and d > TH[level]:
@@ -721,13 +725,15 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
     dates = pd.to_datetime(df["date"])
     dret = np.zeros(len(close))
     dret[1:] = close[1:] / close[:-1] - 1.0
+    # 역배열 관망(50<200 & 200하락)
+    watch = (k["sma50"].to_numpy(float) < sma200) & ~(k["sma200"] > k["sma200"].shift(20)).to_numpy()
 
     # 두 엔진 노출 계산
-    # (1) 200MA engine = 라이브 코어 (200선 + 15%익절 + 5%p재진입)
+    # (1) 200MA engine = 라이브 코어 (200선 + 15%익절 + 5%p재진입 + 역배열 관망)
     TH = (0.25, 0.42, 0.60); CUT = 0.15; MARG = 0.05
     e200 = np.zeros(len(close)); level = 0
     for i in range(len(close)):
-        if warm[i] or not above[i]:
+        if warm[i] or not above[i] or watch[i]:
             e200[i] = 0.0; level = 0; continue
         d = disp[i]
         while level < 3 and d > TH[level]:
