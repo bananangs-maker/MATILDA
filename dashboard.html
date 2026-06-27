@@ -130,7 +130,7 @@
   .lab > span:last-child{margin-left:auto}
   .decksep{display:flex;align-items:center;gap:10px;margin:7px 2px 2px;color:var(--faint);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em}
   .decksep::before,.decksep::after{content:'';flex:1;height:1px;background:var(--border)}
-  .final .lab{color:var(--steel)}
+  .final .lab{color:var(--ink)}
   .call{font-family:var(--disp);font-weight:700;font-size:17px;line-height:1.35}
   .detail{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
   .row{display:flex;align-items:center;justify-content:space-between;margin:7px 0}
@@ -290,7 +290,7 @@
   .wt .wx:hover{opacity:1;color:var(--stop)}
   .searchwrap{position:relative}
   #searchInput{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--panel2);
-    border:1px solid var(--border);border-radius:3px;padding:7px 11px;width:200px;outline:none}
+    border:1px solid var(--border);border-radius:3px;padding:6px 11px;width:200px;outline:none}
   #searchInput:focus{border-color:var(--steel)}
   .searchres{position:absolute;top:38px;left:0;width:320px;max-height:320px;overflow:auto;z-index:50;
     background:var(--panel);border:1px solid var(--border);border-radius:3px;display:none;box-shadow:0 12px 30px rgba(0,0,0,.5)}
@@ -2101,7 +2101,7 @@ function renderPanic(x){
   if(card)card.classList.toggle('panic-on', !!panicOn);
   let banner;
   if(disp==null) banner="";
-  else if(disp>0) banner="<div class='ep-now' style='color:var(--up)'><b>정상</b> — 200일선 위. 패닉 시스템 <b>비활성</b>. (엔진으로 운용)</div>";
+  else if(disp>0) banner="";   // 정상(200선 위)일 땐 상태 텍스트 생략 — 테두리 색으로 활성/비활성 구분
   else if(!panicOn) banner="<div class='ep-now' style='color:var(--caution)'><b>200선 아래(이격 "+disp.toFixed(1)+"%)</b> — 아직 통상 범위. 엔진은 현금 권고. 1단계("+lv[0]+"%) 도달 전까지 대기.</div>";
   else banner="<div class='ep-now' style='color:var(--stop)'><b>⚠ 패닉 구간(이격 "+disp.toFixed(1)+"%)</b> — 엔진 실패 영역. 아래 그리드대로 분할매수 검토.</div>";
   // 단계 표
@@ -2169,6 +2169,21 @@ function renderEng200(x){
   if(!card||!face)return;
   card.classList.remove('pos','neg');
   const GREEN='#2bd07a', RED='#E0322B';
+  // 4개 엔진 상태 뱃지 (항상 표시): 익절·재진입(노랑), 역배열전환·패닉그리드(빨강). 비활성=회색.
+  const AMBER2='#E0A458';
+  function engBadges(fl){
+    fl=fl||{};
+    const mk=(label,active,color)=> active
+      ? "<span class='eng-sig pulse' style='color:"+color+";border-color:"+color+"'>"+label+"</span>"
+      : "<span class='eng-sig' style='color:var(--muted);border-color:var(--border2)'>"+label+"</span>";
+    return "<div class='eng-sigrow'>"
+      + mk((fl.trimStage?("▼ 익절 "+fl.trimStage+"단계"):"▼ 익절"), !!fl.trim, AMBER2)
+      + mk("↻ 재진입", !!fl.reentry, AMBER2)
+      + mk("⚠ 역배열전환", !!fl.watch, RED)
+      + mk("■ 패닉그리드", !!fl.panic, RED)
+      + "</div>";
+  }
+  const panicActive = (x && x.disparity!=null && x.disparity <= -15);
   if(!x){call.textContent='—';det.textContent='';face.innerHTML=faceSVG(0.3,'#888');fill.style.width='0%';extra.innerHTML='';return;}
   if(!x.above200){
     card.classList.add('neg');                         // 현금 = 빨강 점멸
@@ -2179,7 +2194,7 @@ function renderEng200(x){
     extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'><span>현재가 $"+x.price+"</span>"
       +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
       +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>"
-      +"<div class='eng-sigrow'><span class='eng-sig pulse' style='color:"+RED+";border-color:"+RED+"'>■ 현금 — 보유 대상 아님</span></div>"
+      +engBadges({panic:panicActive})
       +"<div class='eng-spacer'></div>";
     return;
   }
@@ -2192,7 +2207,7 @@ function renderEng200(x){
     extra.innerHTML="<div class='eng-metrics' style='margin-top:8px'><span>현재가 $"+x.price+"</span>"
       +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
       +(x.disparity!=null?"<span>이격 "+x.disparity+"%</span>":"")+"</div>"
-      +"<div class='eng-sigrow'><span class='eng-sig pulse' style='color:"+RED+";border-color:"+RED+"'>⚠ 역배열 관망</span></div>"
+      +engBadges({watch:true, panic:panicActive})
       +"<div class='eng-spacer'></div>"
       +"<div class='btnote' style='margin-top:6px'>50일선<200일선 + 200선 하락 = 대세하락 신호. 검증상 이 구간 회피가 역배열 MDD를 크게 줄임.</div>";
     return;
@@ -2204,13 +2219,8 @@ function renderEng200(x){
   det.textContent="200일선 위 — 추세 유효. 흔들리지 말고 보유 유지 (보유 "+x.days_above+"일째)"
     +(trimmed>0?" · 과열 익절 "+trimmed+"% 진행":"");
   fill.style.width=tgt+'%'; fill.style.background=trimmed>0?'#E0A458':GREEN; fill.textContent=tgt+'%';
-  // 점멸 신호 배지 (파라미터 엔진 칩 스타일 통일)
-  const AMBER='#E0A458'; let sigs=[];
-  if(x.entry_signal) sigs.push("<span class='eng-sig pulse' style='color:"+GREEN+";border-color:"+GREEN+";background:var(--accent-soft)'>● 진입 신호</span>");
-  if(x.reentry_signal) sigs.push("<span class='eng-sig pulse' style='color:"+GREEN+";border-color:"+GREEN+";background:var(--accent-soft)'>↻ 재진입 신호</span>");
-  if(trimmed>0) sigs.push("<span class='eng-sig pulse' style='color:"+AMBER+";border-color:"+AMBER+"'>▼ 익절 "+x.stages_triggered+"단계</span>");
-  if(!sigs.length) sigs.push("<span class='eng-sig' style='color:var(--muted);border-color:var(--border2)'>신호 없음 · 보유 유지</span>");
-  const sigRow="<div class='eng-sigrow'>"+sigs.join('')+"</div>";
+  const AMBER='#E0A458';
+  const sigRow=engBadges({trim:trimmed>0, trimStage:x.stages_triggered, reentry:!!x.reentry_signal, watch:false, panic:panicActive});
   let entry="";
   if(x.entry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:6px'>최근 200선 재돌파 — 추세 전환 확인, 진입 구간.</div>";
   else if(x.reentry_signal) entry="<div class='eng200-entry' style='background:var(--accent-soft);color:"+GREEN+";margin-top:6px'>과열(이격) 해소 — 익절분 되넣어 비중 복원 구간.</div>";
