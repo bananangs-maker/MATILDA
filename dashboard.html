@@ -685,7 +685,7 @@
     <div class="qsub2">⑥ 200선 아래 분할진입 검증 <span class="hint">200선 돌파 후 전량진입 vs 200선 아래 이격 단계서 분할매수 — 어느 쪽이 칼마 우위? 분할은 평단↓로 수익↑이나 깊은 하락 시 MDD↑. 신뢰도(하향돌파 횟수)도 함께 확인</span></div>
     <div id="qDip"></div>
     <div class="qsub2">⑦ 장기 약세장 검증 <span class="hint">기초지수(QQQ 등)에 엔진 적용 → 닷컴·금융위기에서 작동하나. 1배+×3합성. ※ QQQ로 'max 기간' 체크 후 돌릴 것 (TQQQ/SOXL은 2010년생이라 약세장 없음)</span></div>
-    <div id="qBear"></div>
+    <div id="qBearHist"></div>
     <div class="qsub2">두 엔진 + 베이스라인 비교 <span class="hint">200MA engine(라이브 코어) vs 20-parameter engine(옛 복잡 엔진) vs 단순 규칙 — 위험조정(샤프·칼마)으로</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -773,10 +773,10 @@ function makeCharts(){
   S.donch_up=line('#5A6472',1); S.donch_low=line('#5A6472',1);
   S.ichi_conv=line('#26C6DA',1.2); S.ichi_base=line('#EF5350',1.2);
   S.ichi_spanA=line('#66BB6A',1); S.ichi_spanB=line('#AB47BC',1);
-  // 200MA 이격 구간 오버레이: 익절(+20/35/50 앰버), 재진입(+10/25/40 초록), 패닉(-15/30/45 빨강)
+  // 200MA 이격 구간 오버레이: 익절(+25/42/60 앰버), 재진입(+20/37/55 초록), 패닉(-15/30/45 빨강)
   S.dispBands=[];
-  [[0.20,'#E0A458',2,'익절'],[0.35,'#E0A458',2,'익절'],[0.50,'#E0A458',2,'익절'],
-   [0.10,'#2bd07a',1,'재진입'],[0.25,'#2bd07a',1,'재진입'],[0.40,'#2bd07a',1,'재진입'],
+  [[0.25,'#E0A458',2,'익절'],[0.42,'#E0A458',2,'익절'],[0.60,'#E0A458',2,'익절'],
+   [0.20,'#2bd07a',1,'재진입'],[0.37,'#2bd07a',1,'재진입'],[0.55,'#2bd07a',1,'재진입'],
    [-0.15,'#ff3b46',2,'패닉'],[-0.30,'#ff3b46',2,'패닉'],[-0.45,'#ff3b46',2,'패닉']
   ].forEach(([pct,col,style,kind])=>{
     const s=priceChart.addLineSeries({color:col,lineWidth:1,lineStyle:style,visible:false,
@@ -1548,7 +1548,7 @@ function renderQuant(d){
             +"<td style='color:var(--faint)'>"+m.turnover+"</td></tr>";});
         return s+"</table>";
       };
-      let h="<div class='btnote' style='margin:2px 0'>(A) 단계당 익절 비율 — 임계 20/35/50 고정, 재진입=같은 임계</div>";
+      let h="<div class='btnote' style='margin:2px 0'>(A) 단계당 익절 비율 — 임계 25/42/60 고정, 재진입=같은 임계</div>";
       h+=tbl(rr.trim_sweep,"익절 비율");
       const rl=rr.reliability;
       if(rl){
@@ -1704,7 +1704,7 @@ function renderQuant(d){
       }else{
         h+="<div class='btnote' style='margin-top:6px;color:var(--caution)'>이 종목/기간엔 닷컴·2008 약세장이 없습니다. <b>QQQ를 검색하고 'max 기간(2000~)' 체크 후</b> 백테스트하세요. (TQQQ/SOXL은 2010년생)</div>";
       }
-      document.getElementById('qBear').innerHTML=h;
+      document.getElementById('qBearHist').innerHTML=h;
     }
     // 단순 베이스라인 비교
     const bl=d.baselines;
@@ -1765,13 +1765,13 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qm_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qn_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1788,7 +1788,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qm_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qn_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

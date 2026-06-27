@@ -198,7 +198,7 @@ def monte_carlo(strat_ret: pd.Series, n_sims=600, block=5, seed=7):
 
 def _baseline_exposures(df, p):
     """비교 대안 비중. '200MA engine'은 라이브 엔진(engine.py)과 동일: 200선 위 보유 + 과열 15%씩 익절
-    (이격 20/35/50단계, 재진입 여유 5%p). 'exposure_core'(20-parameter engine)는 메인 stats로 별도 표시."""
+    (이격 25/42/60단계, 재진입 여유 5%p). 'exposure_core'(20-parameter engine)는 메인 stats로 별도 표시."""
     k = ST.indikit(df)
     close, sma200, rvol = k["close"], k["sma200"], k["rvol"]
     warm = sma200.isna()
@@ -208,7 +208,7 @@ def _baseline_exposures(df, p):
     warm_a = warm.to_numpy()
 
     # 200MA engine = 라이브 코어 (200선 + 단계 익절 15% + 재진입 여유 5%p, 경로의존)
-    TH = (0.20, 0.35, 0.50); CUT = 0.15; MARG = 0.05
+    TH = (0.25, 0.42, 0.60); CUT = 0.15; MARG = 0.05
     eng = np.zeros(len(close)); level = 0
     for i in range(len(close)):
         if warm_a[i] or not above[i]:
@@ -385,7 +385,7 @@ def exit_reentry_research(df, cost_bps=5.0, expense=0.0095):
     above = (close > sma200).to_numpy()
     disp = (close / sma200 - 1.0).to_numpy()
     idx = df.index
-    TH = (0.20, 0.35, 0.50)
+    TH = (0.25, 0.42, 0.60)
 
     def E(arr):
         s = pd.Series(arr, index=idx, dtype=float)
@@ -465,6 +465,7 @@ def bear_research(df, cost_bps=5.0, expense=0.0095):
         "정배열 필터": E(np.where(above & align, 1.0, 0.0)),
         "200기울기 필터": E(np.where(above & rising, 1.0, 0.0)),
         "정배열+기울기": E(np.where(above & align & rising, 1.0, 0.0)),
+        "역배열시 기울기전환": E(np.where(bear, np.where(above & rising, 1.0, 0.0), np.where(above, 1.0, 0.0))),
     }
     out = {}
     bear_perf = {}
@@ -660,7 +661,7 @@ def trim_regime_compare(df, cost_bps=5.0, expense=0.0095, split="2026-01-01"):
     각각 칼마 계산. '15%가 강세장 이득 > 정상장 손해인가'를 한눈에. 견고한 타협점 탐색."""
     df = df.reset_index(drop=True)
     k = ST.indikit(df)
-    TH = (0.20, 0.35, 0.50)
+    TH = (0.25, 0.42, 0.60)
 
     def sweep(sub):
         sub = sub.reset_index(drop=True)
@@ -723,7 +724,7 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
 
     # 두 엔진 노출 계산
     # (1) 200MA engine = 라이브 코어 (200선 + 15%익절 + 5%p재진입)
-    TH = (0.20, 0.35, 0.50); CUT = 0.15; MARG = 0.05
+    TH = (0.25, 0.42, 0.60); CUT = 0.15; MARG = 0.05
     e200 = np.zeros(len(close)); level = 0
     for i in range(len(close)):
         if warm[i] or not above[i]:
