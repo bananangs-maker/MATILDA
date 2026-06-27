@@ -128,23 +128,44 @@ def cnn_sentiment() -> dict:
         "vix_comp": _comp(j, "market_volatility_vix"),
         "source": "CNN",
     }
-    # 원시 VIX (선택): Twelve Data 키가 있으면 시도
-    out["vix_raw"] = _twelvedata_vix()
+    # 원시 VIX (선택): 여러 소스 시도. 성공 시 레벨+출처, 실패 시 None.
+    vix_src, vix_val = _twelvedata_vix()
+    out["vix_raw"] = vix_val
+    out["vix_raw_source"] = vix_src
     return out
 
 
 def _twelvedata_vix():
+    """진짜 VIX 지수 레벨을 여러 소스로 시도. 첫 성공값 반환. (source, value) 튜플."""
     key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
-    if not key:
-        return None
-    try:
-        r = requests.get("https://api.twelvedata.com/quote",
-                         params={"symbol": "VIX", "apikey": key}, timeout=10)
-        j = r.json()
-        c = j.get("close")
-        return round(float(c), 1) if c else None
-    except Exception:
-        return None
+    # 1) Twelve Data — 심볼 후보 여러 개 시도(플랜/표기 차이 대응)
+    if key:
+        for sym in ("VIX", "VIX:CBOE", "VXX"):
+            try:
+                r = requests.get("https://api.twelvedata.com/quote",
+                                 params={"symbol": sym, "apikey": key}, timeout=10)
+                j = r.json()
+                c = j.get("close")
+                if c not in (None, "", "0"):
+                    return ("TwelveData:" + sym, round(float(c), 1))
+            except Exception:
+                pass
+    # 2) Stooq — ^vix 일봉 CSV (키 불필요). Render IP 차단 여부는 배포 후 확인.
+    for url in ("https://stooq.com/q/l/?s=^vix&f=sd2t2c&h&e=csv",
+                "https://stooq.pl/q/l/?s=^vix&f=sd2t2c&h&e=csv"):
+        try:
+            r = requests.get(url, headers=UA, timeout=10)
+            txt = r.text.strip()
+            # 헤더,데이터 2줄. 마지막 컬럼이 close.
+            lines = txt.splitlines()
+            if len(lines) >= 2:
+                cols = lines[1].split(",")
+                c = cols[-1]
+                if c and c.upper() != "N/D":
+                    return ("Stooq", round(float(c), 1))
+        except Exception:
+            pass
+    return (None, None)
 
 
 if __name__ == "__main__":

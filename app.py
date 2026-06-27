@@ -124,17 +124,20 @@ def chart(ticker):
             except ValueError:
                 return None
         vix = _argf("vix"); fng = _argf("fng")
+        vix_source = None
         if vix is None and fng is None:
             sent = _sentiment_cached()
             if sent:
+                # 진짜 VIX 레벨이 있을 때만 엔진 입력으로 사용. 성분 등급(0~100)은 단위가 달라 VIX로 쓰지 않음.
                 if sent.get("vix_raw") is not None:
                     vix = sent["vix_raw"]
-                elif sent.get("vix_comp", {}).get("score") is not None:
-                    vix = sent["vix_comp"]["score"]
+                    vix_source = sent.get("vix_raw_source")
                 if sent.get("fng") is not None:
                     fng = sent["fng"]
         import engine as eng, patterns as pat, summary as summ
         payload["engine"] = eng.compute_engine(df, vix=vix, fng=fng)
+        if isinstance(payload.get("engine"), dict):
+            payload["engine"]["vix_source"] = vix_source
         payload["summary"] = summ.compute_summary(df)
         cross_sigs, cross_marks = pat.detect_ma_cross(df)
         payload["ma_cross"] = cross_sigs
