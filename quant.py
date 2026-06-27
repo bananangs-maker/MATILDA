@@ -721,24 +721,29 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
     dret = np.zeros(len(close))
     dret[1:] = close[1:] / close[:-1] - 1.0
 
-    # 엔진 노출: 200선 위=보유, 과열 단계서 15%씩 익절(재진입 여유 5%p)
+    # 두 엔진 노출 계산
+    # (1) 200MA engine = 라이브 코어 (200선 + 15%익절 + 5%p재진입)
     TH = (0.20, 0.35, 0.50); CUT = 0.15; MARG = 0.05
-    expo = np.zeros(len(close)); level = 0
+    e200 = np.zeros(len(close)); level = 0
     for i in range(len(close)):
         if warm[i] or not above[i]:
-            expo[i] = 0.0; level = 0; continue
+            e200[i] = 0.0; level = 0; continue
         d = disp[i]
         while level < 3 and d > TH[level]:
             level += 1
         while level > 0 and d < (TH[level - 1] - MARG):
             level -= 1
-        expo[i] = max(0.0, 1.0 - CUT * level)
+        e200[i] = max(0.0, 1.0 - CUT * level)
+    # (2) 20-parameter engine = exposure_core (변동성타겟·급성리스크)
+    try:
+        ecore = ST.exposure_core(df, {**ST.PARAMS}, k).to_numpy(float)
+        ecore = np.where(np.isnan(ecore), 0.0, ecore)
+    except Exception:
+        ecore = e200.copy()
 
     cost = cost_bps / 10000.0
     fee_d = expense / 252.0
     levfee_d = lev_fee / 252.0
-    pos = np.zeros(len(close)); pos[1:] = expo[:-1]   # 신호 다음날 반영
-    turn = np.abs(np.diff(pos, prepend=0.0))
 
     def series_metrics(daily_ret):
         eq = np.cumprod(1.0 + daily_ret)
@@ -751,16 +756,28 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
         return {"cagr": round(cagr, 1) if cagr is not None else None,
                 "total": round(total, 1), "mdd": round(mdd, 1), "calmar": calmar}
 
-    # 1배 / 3배합성 — 전략(엔진) & 바이앤홀드
-    strat_1x = pos * dret - turn * cost - (pos > 0) * fee_d
-    bh_1x = dret.copy()
     dret3 = 3.0 * dret
-    strat_3x = pos * dret3 - turn * cost - (pos > 0) * (fee_d + levfee_d)
+    bh_1x = dret.copy()
     bh_3x = dret3 - (fee_d + levfee_d)
 
+    def engine_series(expo):
+        pos = np.zeros(len(close)); pos[1:] = expo[:-1]   # 신호 다음날 반영
+        turn = np.abs(np.diff(pos, prepend=0.0))
+        s1 = pos * dret - turn * cost - (pos > 0) * fee_d
+        s3 = pos * dret3 - turn * cost - (pos > 0) * (fee_d + levfee_d)
+        return s1, s3
+
+    eng_defs = [("200MA engine", e200), ("20-parameter engine", ecore)]
+    engines = {}
+    eng_arrays = {}
+    for nm, ex in eng_defs:
+        s1, s3 = engine_series(ex)
+        engines[nm] = {"strat_1x": series_metrics(s1), "strat_3x": series_metrics(s3)}
+        eng_arrays[nm] = (s1, s3)
+
     out = {
-        "strat_1x": series_metrics(strat_1x), "bh_1x": series_metrics(bh_1x),
-        "strat_3x": series_metrics(strat_3x), "bh_3x": series_metrics(bh_3x),
+        "engines": engines,
+        "bh_1x": series_metrics(bh_1x), "bh_3x": series_metrics(bh_3x),
         "start": str(df["date"].iloc[0]), "end": str(df["date"].iloc[-1]),
         "bars": len(df),
     }
@@ -782,10 +799,12 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
         def wmdd(arr):
             eq = np.cumprod(1.0 + arr[sl]); pk = np.maximum.accumulate(eq)
             return round(float((eq / pk - 1.0).min() * 100), 1)
-        wins.append({"name": nm, "from": s, "to": e,
-                     "bh_1x": wret(bh_1x), "strat_1x": wret(strat_1x),
-                     "bh_3x": wret(bh_3x), "strat_3x": wret(strat_3x),
-                     "strat_3x_mdd": wmdd(strat_3x), "bh_3x_mdd": wmdd(bh_3x)})
+        w = {"name": nm, "from": s, "to": e,
+             "bh_3x": wret(bh_3x), "bh_3x_mdd": wmdd(bh_3x), "eng": {}}
+        for enm, _ex in eng_defs:
+            _s1, _s3 = eng_arrays[enm]
+            w["eng"][enm] = {"ret_3x": wret(_s3), "mdd_3x": wmdd(_s3)}
+        wins.append(w)
     out["windows"] = wins
     return out
 

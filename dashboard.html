@@ -1672,27 +1672,34 @@ function renderQuant(d){
     }
     // ⑦ 장기 약세장 검증
     const bh=d.bear_history;
-    if(bh&&bh.strat_1x){
+    if(bh&&bh.engines){
       const m=(x)=>x?("칼마 "+(x.calmar!=null?x.calmar:'—')+" · CAGR "+(x.cagr!=null?x.cagr+'%':'—')+" · MDD "+x.mdd+"% · 총 "+x.total+"%"):'—';
+      const engNames=Object.keys(bh.engines);
       let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11px'>"
         +"<b>기간 "+bh.start+" ~ "+bh.end+"</b> ("+bh.bars+"봉)<br>"
-        +"<table class='wftab' style='margin-top:6px'><tr><th></th><th>전략(엔진)</th><th>바이앤홀드</th></tr>"
-        +"<tr><td><b>1배 (지수)</b></td><td style='color:var(--go)'>"+m(bh.strat_1x)+"</td><td style='color:var(--muted)'>"+m(bh.bh_1x)+"</td></tr>"
-        +"<tr><td><b>×3 합성</b></td><td style='color:var(--go)'>"+m(bh.strat_3x)+"</td><td style='color:var(--stop)'>"+m(bh.bh_3x)+"</td></tr>"
+        +"<table class='wftab' style='margin-top:6px'><tr><th></th><th>200MA engine</th><th>20-parameter engine</th><th>바이앤홀드</th></tr>"
+        +"<tr><td><b>1배 (지수)</b></td>"
+        +"<td style='color:var(--go)'>"+m(bh.engines['200MA engine'].strat_1x)+"</td>"
+        +"<td style='color:var(--muted)'>"+m(bh.engines['20-parameter engine'].strat_1x)+"</td>"
+        +"<td style='color:var(--muted)'>"+m(bh.bh_1x)+"</td></tr>"
+        +"<tr><td><b>×3 합성</b></td>"
+        +"<td style='color:var(--go)'>"+m(bh.engines['200MA engine'].strat_3x)+"</td>"
+        +"<td style='color:var(--caution)'>"+m(bh.engines['20-parameter engine'].strat_3x)+"</td>"
+        +"<td style='color:var(--stop)'>"+m(bh.bh_3x)+"</td></tr>"
         +"</table></div>";
       if(bh.windows&&bh.windows.length){
-        h+="<div class='btnote' style='margin:2px 0'>약세장 구간별 — 엔진(현금 회피) vs 바이앤홀드</div>";
-        h+="<table class='wftab'><tr><th>약세장</th><th>×3 B&H 수익</th><th>×3 엔진 수익</th><th>×3 B&H 최대낙폭</th><th>×3 엔진 최대낙폭</th></tr>";
+        h+="<div class='btnote' style='margin:2px 0'>약세장 구간별 ×3 수익 (엔진=현금 회피) vs 바이앤홀드</div>";
+        h+="<table class='wftab'><tr><th>약세장</th><th>200MA engine</th><th>20-param engine</th><th>×3 B&H</th></tr>";
         bh.windows.forEach(w=>{
+          const e2=w.eng['200MA engine']||{}, ep=w.eng['20-parameter engine']||{};
           h+="<tr><td><b>"+w.name+"</b><br><span style='color:var(--faint);font-size:9.5px'>"+w.from+"~"+w.to+"</span></td>"
-            +"<td class='neg'>"+w.bh_3x+"%</td>"
-            +"<td style='color:"+(w.strat_3x>=w.bh_3x?'var(--go)':'var(--stop)')+";font-weight:700'>"+w.strat_3x+"%</td>"
-            +"<td class='neg'>"+w.bh_3x_mdd+"%</td>"
-            +"<td style='color:var(--go)'>"+w.strat_3x_mdd+"%</td></tr>";
+            +"<td style='color:var(--go);font-weight:700'>"+e2.ret_3x+"%<br><span style='color:var(--faint);font-size:9.5px'>MDD "+e2.mdd_3x+"%</span></td>"
+            +"<td style='color:var(--caution)'>"+ep.ret_3x+"%<br><span style='color:var(--faint);font-size:9.5px'>MDD "+ep.mdd_3x+"%</span></td>"
+            +"<td class='neg'>"+w.bh_3x+"%<br><span style='color:var(--faint);font-size:9.5px'>MDD "+w.bh_3x_mdd+"%</span></td></tr>";
         });
         h+="</table>";
         h+="<div class='btnote' style='margin-top:6px'><b>핵심</b> — ×3 바이앤홀드는 깊은 약세장에서 변동성 감쇠+레버리지로 사실상 전멸(닷컴·2008). "
-          +"엔진은 200선 아래서 현금이라 그 구간을 회피 → <b style='color:var(--go)'>생존</b>. 이게 200MA 엔진이 레버리지 ETF에 필수인 이유. "
+          +"두 엔진 모두 200선 아래 현금이라 회피·<b style='color:var(--go)'>생존</b>. <b>200MA engine</b>은 노출이 높아 회복장에서 더 먹고, <b>20-parameter engine</b>은 더 방어적(노출↓)이라 수익도↓. "
           +"<span style='color:var(--caution)'>※ 합성은 'TQQQ가 그때 있었다면' 추정(신호는 1배 지수 기준). 실제 레버리지 ETF는 일일 리밸런싱 차이 있음.</span></div>";
       }else{
         h+="<div class='btnote' style='margin-top:6px;color:var(--caution)'>이 종목/기간엔 닷컴·2008 약세장이 없습니다. <b>QQQ를 검색하고 'max 기간(2000~)' 체크 후</b> 백테스트하세요. (TQQQ/SOXL은 2010년생)</div>";
@@ -1762,12 +1769,14 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qk_'+state.ticker); if(!raw){clearQuant();return false;}
+  // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
+  state.bandStats=null;
+  try{const raw=localStorage.getItem('mat_qm_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
     renderQuant(d); return true;
-  }catch(e){clearQuant();return false;}
+  }catch(e){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
 }
 async function runQuant(){
   const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
@@ -1779,7 +1788,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qk_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qm_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
