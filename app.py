@@ -47,10 +47,43 @@ def mock_ohlcv(ticker: str, n: int = 500, interval: str = "1day") -> pd.DataFram
 
 
 import time
+import pickle
 _CACHE = {}          # ticker -> (df, source, fetched_at)
+_CACHE_DIR = os.environ.get("MATILDA_CACHE_DIR", "/tmp/matilda_cache")   # 디스크 영속(재시작/웨이크 후에도 폴백 가능)
 _TTL = 3600          # 시장심리(sentiment) 캐시 1시간
 _DATA_TTL_CHART = 3600       # 3년 차트: 1시간(장중 현재가 신선도 유지)
 _DATA_TTL_BT = 12 * 3600     # 10년 백테스트: 12시간(역사 분석은 당일 봉 신선도 불필요 → API 한도 대폭 절약)
+
+
+def _disk_path(ckey):
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+    except Exception:
+        return None
+    safe = "_".join(str(x) for x in ckey).replace("/", "-").replace("\\", "-")
+    return os.path.join(_CACHE_DIR, safe + ".pkl")
+
+
+def _disk_save(ckey, df, source):
+    p = _disk_path(ckey)
+    if not p:
+        return
+    try:
+        with open(p, "wb") as f:
+            pickle.dump((df, source, time.time()), f)
+    except Exception:
+        pass
+
+
+def _disk_load(ckey):
+    p = _disk_path(ckey)
+    if not p:
+        return None
+    try:
+        with open(p, "rb") as f:
+            return pickle.load(f)   # (df, source, ts)
+    except Exception:
+        return None
 _SENT = {"data": None, "ts": 0.0}   # 시장심리(매크로) 캐시
 _FNGH = {"data": None, "ts": 0.0}   # 공포탐욕 과거 시계열 캐시
 _FNGF = {"data": None, "ts": 0.0}   # 공포탐욕 전체(overview+7지표) 캐시
@@ -84,15 +117,28 @@ def _load(ticker, interval="1day", long=False, hist=None):
     hit = _CACHE.get(ckey)
     if hit and time.time() - hit[2] < ttl:
         return hit[0], hit[1] + " · 캐시"
+    # 메모리에 없으면(웨이크/재시작 직후) 디스크 캐시를 끌어와 메모리에 복원
+    if not hit:
+        disk = _disk_load(ckey)
+        if disk:
+            _CACHE[ckey] = disk
+            hit = disk
+            if time.time() - disk[2] < ttl:
+                return disk[0], disk[1] + " · 캐시"
     from public_data import daily_ohlcv
     try:
         df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
         _CACHE[ckey] = (df, source, time.time())
+        _disk_save(ckey, df, source)
         return df, source
     except Exception:
         # 모든 소스 실패(429 등) → 만료된 캐시라도 있으면 사용(완전 실패 방지)
         if hit:
-            return hit[0], hit[1] + " · 캐시(만료·한도소진으로 갱신실패, 직전 데이터 사용)"
+            return hit[0], hit[1] + " · 캐시(한도소진·갱신실패, 직전 데이터)"
+        disk = _disk_load(ckey)   # 메모리에도 없으면 디스크 마지막 시도
+        if disk:
+            _CACHE[ckey] = disk
+            return disk[0], disk[1] + " · 캐시(디스크·갱신실패, 직전 데이터)"
         raise
 
 
