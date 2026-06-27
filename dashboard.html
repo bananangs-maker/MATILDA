@@ -121,7 +121,9 @@
   .dvn{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
   .dvw{font-family:var(--mono);font-size:10.5px;color:var(--faint);min-width:34px;text-align:right}
   .dvs{font-family:var(--mono);font-size:10.5px;font-weight:700;border:1px solid;border-radius:2px;padding:2px 8px;min-width:42px;text-align:center}
-  .dvconsensus{margin-top:10px;padding-top:9px;border-top:1px solid var(--border2)}
+  .dvconsensus{margin-top:10px;padding-top:11px;border-top:1px solid var(--border2)}
+  .dvfull-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:center}
+  @media(max-width:760px){.dvfull-grid{grid-template-columns:1fr;gap:10px}}
   .dvclab{font-family:var(--disp);font-size:13px;font-weight:700;margin-bottom:6px}
   .dvbar{position:relative;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
   .dvbar-mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--faint);z-index:2}
@@ -1143,20 +1145,22 @@ function renderDivergence(d){
     "<div class='dvgrid'>"
     +"<div class='dvcol'><div class='dvhead'>다이버전스 <span class='hint'>가격 vs 모멘텀 괴리</span></div>"
       +dv
-      +"<div class='dvconsensus'><div class='dvclab' style='color:"+cColor+"'>"+c.label+"</div>"
+    +"</div>"
+    +"<div class='dvcol'><div class='dvhead'>과매수 / 과매도 <span class='hint'>과매수 "+d.ob_count+" · 과매도 "+d.os_count+"</span></div>"
+      +oo
+    +"</div>"
+    +"</div>"
+    +"<div class='dvconsensus'><div class='dvfull-grid'>"
+      +"<div><div class='dvclab' style='color:"+cColor+"'>"+c.label+"</div>"
       +"<div class='dvbar'><div class='dvbar-mid'></div><div class='dvbar-fill' style='background:"+cColor+";"
-        +(frac<0?("right:50%;width:"+Math.abs(pct)+"%"):("left:50%;width:"+pct+"%"))+"'></div></div>"
-      +"<div class='dvcnum'>합의 "+(c.score>0?'+':'')+c.score+" / ±"+c.max+" · 강세 "+c.bull+" 약세 "+c.bear+"</div>"
+        +(frac<0?("right:50%;width:"+Math.abs(pct)+"%"):("left:50%;width:"+pct+"%"))+"'></div></div></div>"
+      +"<div><div class='dvcnum'>합의 "+(c.score>0?'+':'')+c.score+" / ±"+c.max+" · 강세 "+c.bull+" 약세 "+c.bear+"</div>"
       +"<div class='btnote' style='margin-top:7px'>"+(
         c.score<=-0.9?"가격은 오르는데 모멘텀이 약해지는 중 — <b style='color:"+RED+"'>상투·조정 주의</b> 신호. 다지표 동시 발생일수록 신뢰↑."
         :c.score>=0.9?"가격은 빠지는데 모멘텀이 개선되는 중 — <b style='color:"+GREEN+"'>바닥·반등 가능</b> 신호. 다지표 동시 발생일수록 신뢰↑."
         :"가격과 모멘텀 간 유의미한 괴리 없음 — 추세에 순응. 다이버전스는 추세 <b>둔화</b> 경고일 뿐 반전 확정 아님(참고용)."
       )+"</div></div>"
-    +"</div>"
-    +"<div class='dvcol'><div class='dvhead'>과매수 / 과매도 <span class='hint'>과매수 "+d.ob_count+" · 과매도 "+d.os_count+"</span></div>"
-      +oo
-    +"</div>"
-    +"</div>";
+    +"</div></div>";
 }
 /* ---------- 관심종목 + 종목 검색 ---------- */
 const PINNED=['TQQQ','SOXL'];
