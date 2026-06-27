@@ -501,6 +501,30 @@ def compute_series(df: pd.DataFrame) -> dict:
     conv, base, spanA, spanB = ichimoku(df)
     adx_, pdi, mdi = adx(df)
     sk, sd = stoch(df)
+    # BB 스퀴즈 (TTM 방식): 볼린저밴드가 켈트너 채널 안으로 수축 → 변동성 압축, 곧 큰 변동 예고
+    sqz = ((up < ku) & (low > kl)).fillna(False).tolist()
+    closes = close.tolist()
+    sq_markers = []
+    n = len(sqz); i = 0; MIN_RUN = 5
+    while i < n:
+        if sqz[i]:
+            j = i
+            while j < n and sqz[j]:
+                j += 1
+            if (j - i) >= MIN_RUN:
+                sq_markers.append({"time": dates[i], "position": "belowBar",
+                                   "color": "#7FB3FF", "shape": "circle", "text": "스퀴즈"})
+                if j < n:  # 스퀴즈 해제 → 돌파 방향 판정(해제 직전 대비 3봉 후)
+                    look = min(n - 1, j + 3)
+                    if closes[look] - closes[j - 1] >= 0:
+                        sq_markers.append({"time": dates[j], "position": "belowBar",
+                                           "color": "#26C281", "shape": "arrowUp", "text": "돌파"})
+                    else:
+                        sq_markers.append({"time": dates[j], "position": "aboveBar",
+                                           "color": "#ff3b46", "shape": "arrowDown", "text": "돌파"})
+            i = j
+        else:
+            i += 1
     return {
         "candles": candles,
         "volume": vol,
@@ -528,6 +552,8 @@ def compute_series(df: pd.DataFrame) -> dict:
         "macd_signal": _series(dates, msig),
         "macd_hist": _series(dates, mhist, hist_color),
         "obv": _series(dates, _obv(df)),
+        "squeeze_markers": sq_markers,
+        "squeeze_now": bool(sqz[-1]) if sqz else False,
     }
 
 

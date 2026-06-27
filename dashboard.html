@@ -448,6 +448,7 @@
     <button data-s="vwap"><span class="sw" style="background:#E0A458"></span>VWAP</button>
     <button data-s="ichi"><span class="sw" style="background:#26C6DA"></span>일목구름</button>
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
+    <button data-s="sqz"><span class="sw" style="background:#7FB3FF"></span>BB스퀴즈</button>
     <button data-s="donch"><span class="sw" style="background:#5A6472"></span>Donchian</button>
     <button data-s="pat"><span class="sw" style="background:#F2B233"></span>캔들패턴</button>
     <button data-s="cpat"><span class="sw" style="background:#B98AFF"></span>차트패턴</button>
@@ -465,6 +466,7 @@
         <button data-m="hline">수평선</button>
         <button data-m="trend">추세선</button>
         <button data-m="channel">채널</button>
+        <button data-m="tri">삼각수렴</button>
         <button data-m="_clear">전체 삭제</button>
         <span class="ds" id="drawStatus"></span>
       </div>
@@ -735,7 +737,7 @@ function loadLS(key,fallback){try{const v=localStorage.getItem(key);return v?JSO
 function saveLS(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}}
 const state={ticker:'TQQQ',range:'1Y',interval:'1day',osc:'rsi',
   toggles:{bb:true,ema5:false,ema20:true,sma60:false,sma180:true,sma200:true,sar:false,vol:true,sig:true,
-           vwap:false,ichi:false,kelt:false,donch:false,pat:false,cpat:false,evt:false,disp:false},
+           vwap:false,ichi:false,kelt:false,sqz:false,donch:false,pat:false,cpat:false,evt:false,disp:false},
   patternMarkers:[],
   bandStats:null,
   cpatMarkers:[],
@@ -911,6 +913,7 @@ function updateMarkers(){
   if(state.toggles.pat&&state.patternMarkers)m=m.concat(state.patternMarkers);
   if(state.toggles.cpat&&state.cpatMarkers)m=m.concat(state.cpatMarkers);
   if(state.toggles.evt&&state.evtMarkers)m=m.concat(state.evtMarkers);
+  if(state.toggles.sqz&&state.squeezeMarkers)m=m.concat(state.squeezeMarkers);
   m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
   candle.setMarkers(m);
 }
@@ -1009,6 +1012,7 @@ async function load(){
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
     state.markers=mk;
+    state.squeezeMarkers=d.squeeze_markers||[];
     renderPrice(d); renderOsc(); decide(); renderDivergence(d.divergence_panel); renderAggTape(d); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
@@ -1968,8 +1972,19 @@ function renderOverlay(){
       octx.moveTo(x1,y1);octx.lineTo(x2,y2);octx.lineTo(x2,py2);octx.lineTo(x1,py1);octx.closePath();octx.fill();octx.globalAlpha=1;
       seg(x1,y1,x2,y2,col,seld?2.2:1.6); seg(x1,py1,x2,py2,col,seld?2.2:1.6);
       if(seld){dot(x1,y1,col);dot(x2,y2,col);dot(x3,y3,col);}
+    }else if(it.type==='tri'&&it.a1&&it.a2&&it.b1&&it.b2){
+      const ax1=timeX(it.a1.time),ay1=priceY(it.a1.price),ax2=timeX(it.a2.time),ay2=priceY(it.a2.price),
+            bx1=timeX(it.b1.time),by1=priceY(it.b1.price),bx2=timeX(it.b2.time),by2=priceY(it.b2.price);
+      if([ax1,ay1,ax2,ay2,bx1,by1,bx2,by2].some(v=>v==null))return;
+      octx.fillStyle=col;octx.globalAlpha=0.07;octx.beginPath();
+      octx.moveTo(ax1,ay1);octx.lineTo(ax2,ay2);octx.lineTo(bx2,by2);octx.lineTo(bx1,by1);octx.closePath();octx.fill();octx.globalAlpha=1;
+      seg(ax1,ay1,ax2,ay2,col,seld?2.4:1.8); seg(bx1,by1,bx2,by2,col,seld?2.4:1.8);
+      if(seld){dot(ax1,ay1,col);dot(ax2,ay2,col);dot(bx1,by1,col);dot(bx2,by2,col);}
     }
   });
+  const pt=state.draw.pendingTri;
+  if(pt){const a=timeX(pt.a1.time),b=priceY(pt.a1.price),c2=timeX(pt.a2.time),d2=priceY(pt.a2.price);
+    if(a!=null&&c2!=null)seg(a,b,c2,d2,C.amber,1.8);}
   const pc=state.draw.pendingCh;
   if(pc){const a=timeX(pc.p1.time),b=priceY(pc.p1.price),c2=timeX(pc.p2.time),d2=priceY(pc.p2.price);
     if(a!=null&&c2!=null)seg(a,b,c2,d2,C.steel,1.6);}
@@ -2006,6 +2021,16 @@ function hitTest(px,py){
       const mm=(x2-x1)?(y2-y1)/(x2-x1):0, py1=y3+mm*(x1-x3), py2=y3+mm*(x2-x3);
       if(dist2seg(px,py,x1,y1,x2,y2)<HIT||dist2seg(px,py,x1,py1,x2,py2)<HIT)return{idx:i,part:'whole'};
     }
+    else if(it.type==='tri'&&it.a1&&it.a2&&it.b1&&it.b2){
+      const ax1=timeX(it.a1.time),ay1=priceY(it.a1.price),ax2=timeX(it.a2.time),ay2=priceY(it.a2.price),
+            bx1=timeX(it.b1.time),by1=priceY(it.b1.price),bx2=timeX(it.b2.time),by2=priceY(it.b2.price);
+      if([ax1,ax2,bx1,bx2].some(v=>v==null))continue;
+      if(Math.hypot(px-ax1,py-ay1)<HANDLE)return{idx:i,part:'a1'};
+      if(Math.hypot(px-ax2,py-ay2)<HANDLE)return{idx:i,part:'a2'};
+      if(Math.hypot(px-bx1,py-by1)<HANDLE)return{idx:i,part:'b1'};
+      if(Math.hypot(px-bx2,py-by2)<HANDLE)return{idx:i,part:'b2'};
+      if(dist2seg(px,py,ax1,ay1,ax2,ay2)<HIT||dist2seg(px,py,bx1,by1,bx2,by2)<HIT)return{idx:i,part:'whole'};
+    }
   }
   return null;
 }
@@ -2032,8 +2057,10 @@ function onDown(e){
       const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
       state.draw.draft={t1:t,p1v:p,x1:px,y1:py,x2:px,y2:py}; drag={kind:'draft'};
     }
+  }else if(m==='tri'){
+    const t=xToTime(px),p=yToPrice(py); if(t==null||p==null)return;
+    state.draw.draft={t1:t,p1v:p,x1:px,y1:py,x2:px,y2:py}; drag={kind:'draft'};
   }else if(m==='edit'){
-    const h=hitTest(px,py);
     if(h){state.draw.sel=h.idx; drag={kind:'move',idx:h.idx,part:h.part,lastX:px,lastY:py};}
     else state.draw.sel=null;
     renderOverlay();renderDrawList();
@@ -2070,6 +2097,18 @@ function onMove(e){
         drag.lastX=px;drag.lastY=py;
       }
     }
+    else if(it.type==='tri'){
+      if(['a1','a2','b1','b2'].indexOf(drag.part)>=0){
+        const t=xToTime(px),p=yToPrice(py);
+        if(t!=null)it[drag.part].time=t; if(p!=null)it[drag.part].price=Math.round(p*100)/100;
+      }else{
+        const ddx=px-drag.lastX, ddy=py-drag.lastY;
+        ['a1','a2','b1','b2'].forEach(k=>{const x=timeX(it[k].time),y=priceY(it[k].price);
+          const nt=xToTime(x+ddx),np=yToPrice(y+ddy);
+          if(nt!=null)it[k].time=nt; if(np!=null)it[k].price=Math.round(np*100)/100;});
+        drag.lastX=px;drag.lastY=py;
+      }
+    }
     renderOverlay();
   }
 }
@@ -2082,6 +2121,15 @@ function onUp(e){
       const p1o={time:d.t1,price:Math.round(d.p1v*100)/100}, p2o={time:t2,price:Math.round(p2*100)/100};
       if(state.drawMode==='channel'){
         state.draw.pendingCh={p1:p1o,p2:p2o}; setDrawStatus('평행선 위치를 클릭하세요');
+      }else if(state.drawMode==='tri'){
+        if(state.draw.pendingTri){
+          const t=state.draw.pendingTri;
+          state.draw.items.push({id:Date.now()+'',type:'tri',color:C.amber,
+            a1:t.a1,a2:t.a2,b1:p1o,b2:p2o});
+          state.draw.pendingTri=null; state.draw.sel=state.draw.items.length-1; selectTool('edit'); setDrawStatus('');
+        }else{
+          state.draw.pendingTri={a1:p1o,a2:p2o}; setDrawStatus('두 번째 추세선을 그리세요 (수렴/발산)');
+        }
       }else{
         state.draw.items.push({id:Date.now()+'',type:'trend',color:C.steel,p1:p1o,p2:p2o});
         state.draw.sel=state.draw.items.length-1; selectTool('edit');
@@ -2097,7 +2145,7 @@ function renderDrawList(){
   if(!state.draw.items.length){el.innerHTML='<div class="dempty">없음 — 도구를 골라 차트에 그리세요.</div>';return;}
   el.innerHTML=state.draw.items.map((it,i)=>{
     const c=it.color||(it.type==='hline'?C.amber:C.steel);
-    const lab=it.type==='hline'?('수평 $'+it.price):it.type==='channel'?'채널':('추세 '+it.p1.price+'→'+it.p2.price);
+    const lab=it.type==='hline'?('수평 $'+it.price):it.type==='channel'?'채널':it.type==='tri'?'삼각수렴':('추세 '+it.p1.price+'→'+it.p2.price);
     const sel=i===state.draw.sel?' style="background:rgba(255,59,70,.10);border-radius:2px"':'';
     return '<div class="di"'+sel+'><span class="sw" style="background:'+c+'"></span><span class="lab">'+lab+'</span><button class="del" data-i="'+i+'">×</button></div>';
   }).join('');
@@ -2116,13 +2164,13 @@ async function loadDrawings(){
     if(r.configured){document.getElementById('drawSync').textContent='클라우드 저장(Supabase)';
       if(Array.isArray(r.drawings)&&r.drawings.length)items=r.drawings;}
   }catch(e){}
-  state.draw.items=items;state.draw.sel=null;state.draw.draft=null;state.draw.pendingCh=null;renderOverlay();renderDrawList();
+  state.draw.items=items;state.draw.sel=null;state.draw.draft=null;state.draw.pendingCh=null;state.draw.pendingTri=null;renderOverlay();renderDrawList();
 }
 function selectTool(m){
-  state.drawMode=m; state.draw.draft=null; state.draw.pendingCh=null;
+  state.drawMode=m; state.draw.draft=null; state.draw.pendingCh=null; state.draw.pendingTri=null;
   setOverlayInteractive(m!=='cursor');
-  setDrawStatus(m==='hline'?'클릭해서 수평선 추가':m==='trend'?'드래그해서 추세선 긋기':m==='channel'?'드래그로 기준선 → 클릭으로 평행선':m==='edit'?'선 클릭=선택, 끝점/선 드래그=이동, Delete=삭제':'');
-  document.querySelectorAll('#drawbar button[data-m]').forEach(x=>{if(['cursor','edit','hline','trend','channel'].includes(x.dataset.m))x.classList.toggle('on',x.dataset.m===m);});
+  setDrawStatus(m==='hline'?'클릭해서 수평선 추가':m==='trend'?'드래그해서 추세선 긋기':m==='channel'?'드래그로 기준선 → 클릭으로 평행선':m==='tri'?'추세선 2개를 드래그해 삼각수렴 그리기 (상단·하단)':m==='edit'?'선 클릭=선택, 끝점/선 드래그=이동, Delete=삭제':'');
+  document.querySelectorAll('#drawbar button[data-m]').forEach(x=>{if(['cursor','edit','hline','trend','channel','tri'].includes(x.dataset.m))x.classList.toggle('on',x.dataset.m===m);});
 }
 document.querySelectorAll('#drawbar button').forEach(b=>b.onclick=()=>{
   const m=b.dataset.m;
