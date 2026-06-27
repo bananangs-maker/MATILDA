@@ -288,9 +288,9 @@
   .wt.on{color:#1a0608;background:var(--steel);border-color:var(--steel)}
   .wt .wx{font-style:normal;margin-left:6px;opacity:.55;font-size:13px}
   .wt .wx:hover{opacity:1;color:var(--stop)}
-  .searchwrap{position:relative}
+  .searchwrap{position:relative;align-self:stretch;display:flex}
   #searchInput{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--panel2);
-    border:1px solid var(--border);border-radius:3px;padding:6px 11px;width:200px;outline:none}
+    border:1px solid var(--border);border-radius:3px;padding:6px 11px;width:200px;outline:none;height:100%;box-sizing:border-box}
   #searchInput:focus{border-color:var(--steel)}
   .searchres{position:absolute;top:38px;left:0;width:320px;max-height:320px;overflow:auto;z-index:50;
     background:var(--panel);border:1px solid var(--border);border-radius:3px;display:none;box-shadow:0 12px 30px rgba(0,0,0,.5)}
@@ -2126,9 +2126,9 @@ function renderEng200(x){
       : "<span class='eng-sig' style='color:var(--muted);border-color:var(--border2)'>"+label+"</span>";
     return "<div class='eng-sigrow'>"
       + mk((fl.trimStage?("▼ 익절 "+fl.trimStage+"단계"):"▼ 익절"), !!fl.trim, AMBER2)
-      + mk("↻ 재진입", !!fl.reentry, AMBER2)
-      + mk("⚠ 역배열전환", !!fl.watch, RED)
-      + mk("■ 패닉그리드", !!fl.panic, RED)
+      + mk("▲ 재진입", !!fl.reentry, AMBER2)
+      + mk("역배열전환", !!fl.watch, RED)
+      + mk("패닉그리드", !!fl.panic, RED)
       + "</div>";
   }
   const panicActive = (x && x.disparity!=null && x.disparity <= -15);
