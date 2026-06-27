@@ -662,6 +662,7 @@
       <select id="qExp"><option value="0">0</option><option value="0.75">0.75</option><option value="0.95" selected>0.95</option></select>
       <label title="이 날짜 이후 구간을 검증에서 제외(비정상 랠리 배제용). 비우면 전체.">검증 종료일</label>
       <input type="date" id="qEnd" style="background:var(--panel2);border:1px solid var(--border);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:11px;padding:4px 6px">
+      <label class="alsw" title="2000~ 전체 기간(닷컴·금융위기 포함). QQQ 등 기초지수로 약세장 검증 시 체크. 데이터 호출 늘어남."><input type="checkbox" id="qMax"> max 기간(2000~)</label>
       <button class="minibtn" id="qRun">백테스트 실행</button>
       <button class="minibtn" id="qCsvBtn" title="로컬에서 받은 전체 히스토리 CSV로 백테스트(2000~ 약세장 검증)">CSV 업로드 백테스트</button>
       <input type="file" id="qCsvFile" accept=".csv,.txt" style="display:none">
@@ -683,6 +684,8 @@
     <div id="qBreak"></div>
     <div class="qsub2">⑥ 200선 아래 분할진입 검증 <span class="hint">200선 돌파 후 전량진입 vs 200선 아래 이격 단계서 분할매수 — 어느 쪽이 칼마 우위? 분할은 평단↓로 수익↑이나 깊은 하락 시 MDD↑. 신뢰도(하향돌파 횟수)도 함께 확인</span></div>
     <div id="qDip"></div>
+    <div class="qsub2">⑦ 장기 약세장 검증 <span class="hint">기초지수(QQQ 등)에 엔진 적용 → 닷컴·금융위기에서 작동하나. 1배+×3합성. ※ QQQ로 'max 기간' 체크 후 돌릴 것 (TQQQ/SOXL은 2010년생이라 약세장 없음)</span></div>
+    <div id="qBear"></div>
     <div class="qsub2">단순 베이스라인 비교 <span class="hint">엔진(20+ 파라미터)이 단순 규칙보다 위험조정 성과가 나은지 — 복잡성의 정당성 검증</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1644,6 +1647,35 @@ function renderQuant(d){
         +"총수익↑·MDD↑는 분할진입의 본질(평단↓ 대신 더 깊이 물림)이니, 칼마뿐 아니라 본인이 감당할 MDD인지로 판단할 것.</div>";
       document.getElementById('qDip').innerHTML=h;
     }
+    // ⑦ 장기 약세장 검증
+    const bh=d.bear_history;
+    if(bh&&bh.strat_1x){
+      const m=(x)=>x?("칼마 "+(x.calmar!=null?x.calmar:'—')+" · CAGR "+(x.cagr!=null?x.cagr+'%':'—')+" · MDD "+x.mdd+"% · 총 "+x.total+"%"):'—';
+      let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11px'>"
+        +"<b>기간 "+bh.start+" ~ "+bh.end+"</b> ("+bh.bars+"봉)<br>"
+        +"<table class='wftab' style='margin-top:6px'><tr><th></th><th>전략(엔진)</th><th>바이앤홀드</th></tr>"
+        +"<tr><td><b>1배 (지수)</b></td><td style='color:var(--go)'>"+m(bh.strat_1x)+"</td><td style='color:var(--muted)'>"+m(bh.bh_1x)+"</td></tr>"
+        +"<tr><td><b>×3 합성</b></td><td style='color:var(--go)'>"+m(bh.strat_3x)+"</td><td style='color:var(--stop)'>"+m(bh.bh_3x)+"</td></tr>"
+        +"</table></div>";
+      if(bh.windows&&bh.windows.length){
+        h+="<div class='btnote' style='margin:2px 0'>약세장 구간별 — 엔진(현금 회피) vs 바이앤홀드</div>";
+        h+="<table class='wftab'><tr><th>약세장</th><th>×3 B&H 수익</th><th>×3 엔진 수익</th><th>×3 B&H 최대낙폭</th><th>×3 엔진 최대낙폭</th></tr>";
+        bh.windows.forEach(w=>{
+          h+="<tr><td><b>"+w.name+"</b><br><span style='color:var(--faint);font-size:9.5px'>"+w.from+"~"+w.to+"</span></td>"
+            +"<td class='neg'>"+w.bh_3x+"%</td>"
+            +"<td style='color:"+(w.strat_3x>=w.bh_3x?'var(--go)':'var(--stop)')+";font-weight:700'>"+w.strat_3x+"%</td>"
+            +"<td class='neg'>"+w.bh_3x_mdd+"%</td>"
+            +"<td style='color:var(--go)'>"+w.strat_3x_mdd+"%</td></tr>";
+        });
+        h+="</table>";
+        h+="<div class='btnote' style='margin-top:6px'><b>핵심</b> — ×3 바이앤홀드는 깊은 약세장에서 변동성 감쇠+레버리지로 사실상 전멸(닷컴·2008). "
+          +"엔진은 200선 아래서 현금이라 그 구간을 회피 → <b style='color:var(--go)'>생존</b>. 이게 200MA 엔진이 레버리지 ETF에 필수인 이유. "
+          +"<span style='color:var(--caution)'>※ 합성은 'TQQQ가 그때 있었다면' 추정(신호는 1배 지수 기준). 실제 레버리지 ETF는 일일 리밸런싱 차이 있음.</span></div>";
+      }else{
+        h+="<div class='btnote' style='margin-top:6px;color:var(--caution)'>이 종목/기간엔 닷컴·2008 약세장이 없습니다. <b>QQQ를 검색하고 'max 기간(2000~)' 체크 후</b> 백테스트하세요. (TQQQ/SOXL은 2010년생)</div>";
+      }
+      document.getElementById('qBear').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1704,11 +1736,11 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
-  try{const raw=localStorage.getItem('mat_qh_'+state.ticker); if(!raw){clearQuant();return false;}
+  try{const raw=localStorage.getItem('mat_qi_'+state.ticker); if(!raw){clearQuant();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1718,13 +1750,14 @@ function restoreQuant(){
 async function runQuant(){
   const cost=document.getElementById('qCost').value, exp=document.getElementById('qExp').value;
   const endEl=document.getElementById('qEnd'); const end=endEl&&endEl.value?endEl.value:'';
+  const maxEl=document.getElementById('qMax'); const hist=(maxEl&&maxEl.checked)?'&hist=max':'';
   const btn=document.getElementById('qRun');btn.disabled=true;btn.textContent='실행 중…';
   try{
-    const d=await safeJson(await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp+(end?'&end='+end:'')));
+    const d=await safeJson(await fetch('/quant/'+state.ticker+'?cost='+cost+'&expense='+exp+(end?'&end='+end:'')+hist));
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qh_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qi_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

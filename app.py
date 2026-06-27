@@ -72,17 +72,19 @@ def _sentiment_cached():
         return _SENT["data"]   # 직전 캐시라도 있으면 사용, 없으면 None
 
 
-def _load(ticker, interval="1day", long=False):
+def _load(ticker, interval="1day", long=False, hist=None):
     if USE_MOCK:
         n = {"1day": 5200 if long else 780, "1week": 400, "1month": 300}.get(interval, 780)
+        if hist == "max":
+            n = 6500
         return mock_ohlcv(ticker, n, interval), "MOCK (합성 데이터)"
-    ckey = (ticker, interval, long)
-    ttl = _DATA_TTL_BT if long else _DATA_TTL_CHART
+    yrange = "max" if hist == "max" else ("10y" if long else "3y")   # max=2000~(AlphaVantage/Tiingo), 백테=10년, 차트=3년
+    ckey = (ticker, interval, yrange)
+    ttl = _DATA_TTL_BT if (long or hist == "max") else _DATA_TTL_CHART
     hit = _CACHE.get(ckey)
     if hit and time.time() - hit[2] < ttl:
         return hit[0], hit[1] + " · 캐시"
     from public_data import daily_ohlcv
-    yrange = "10y" if long else "3y"   # 백테스트=10년(클라우드에서 안정적). 2000~ 깊은 역사는 CSV 업로드로.
     try:
         df, source = daily_ohlcv(ticker, yrange=yrange, interval=interval)
         _CACHE[ckey] = (df, source, time.time())
@@ -178,8 +180,13 @@ def quant_route(ticker):
         expense = 0.0095
     try:
         note = None
+        hist = (request.args.get("hist") or "").strip()   # 'max'면 2000~ 전체(AlphaVantage/Tiingo)
         try:
-            df, source = _load(ticker, "1day", long=True)   # 백테스트는 10년
+            if hist == "max":
+                df, source = _load(ticker, "1day", long=True, hist="max")
+                note = f"최대 기간({df['date'].iloc[0]}~) 적용 — 깊은 약세장 검증용"
+            else:
+                df, source = _load(ticker, "1day", long=True)   # 백테스트는 10년
         except Exception as e_long:
             # 10년 요청이 한도/차단(429)이면, 차트가 받아둔 3년 데이터로라도 분석(완전 실패 방지)
             df, source = _load(ticker, "1day", long=False)

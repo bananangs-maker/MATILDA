@@ -686,6 +686,91 @@ def trim_regime_compare(df, cost_bps=5.0, expense=0.0095, split="2026-01-01"):
             "has_2026": normal is not None}
 
 
+def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
+    """[장기 약세장 검증] 기초지수(예: QQQ, 1999~)에 200MA+이격 엔진을 적용해 닷컴·2008 등
+    진짜 약세장에서 작동하는지 본다. 1배(지수 그대로) + ×3합성(일일수익률×3, 변동성 감쇠는
+    복리로 자동 반영, 운용보수 차감) 둘 다 계산. 신호는 1배 지수 기준(레버리지 ETF 전략 표준).
+    레버리지 ETF가 그 시절 없었으므로 합성은 '있었다면' 추정치."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close = k["close"].to_numpy(float)
+    sma200 = k["sma200"].to_numpy(float)
+    warm = np.isnan(sma200)
+    above = close > sma200
+    disp = (close / sma200 - 1.0)
+    dates = pd.to_datetime(df["date"])
+    dret = np.zeros(len(close))
+    dret[1:] = close[1:] / close[:-1] - 1.0
+
+    # 엔진 노출: 200선 위=보유, 과열 단계서 15%씩 익절(재진입 여유 5%p)
+    TH = (0.20, 0.35, 0.50); CUT = 0.15; MARG = 0.05
+    expo = np.zeros(len(close)); level = 0
+    for i in range(len(close)):
+        if warm[i] or not above[i]:
+            expo[i] = 0.0; level = 0; continue
+        d = disp[i]
+        while level < 3 and d > TH[level]:
+            level += 1
+        while level > 0 and d < (TH[level - 1] - MARG):
+            level -= 1
+        expo[i] = max(0.0, 1.0 - CUT * level)
+
+    cost = cost_bps / 10000.0
+    fee_d = expense / 252.0
+    levfee_d = lev_fee / 252.0
+    pos = np.zeros(len(close)); pos[1:] = expo[:-1]   # 신호 다음날 반영
+    turn = np.abs(np.diff(pos, prepend=0.0))
+
+    def series_metrics(daily_ret):
+        eq = np.cumprod(1.0 + daily_ret)
+        peak = np.maximum.accumulate(eq)
+        mdd = float((eq / peak - 1.0).min() * 100)
+        yrs = len(daily_ret) / 252.0
+        cagr = float((eq[-1] ** (1 / yrs) - 1.0) * 100) if yrs > 0 and eq[-1] > 0 else None
+        total = float((eq[-1] - 1.0) * 100)
+        calmar = round(cagr / abs(mdd), 2) if (cagr and mdd < 0) else None
+        return {"cagr": round(cagr, 1) if cagr is not None else None,
+                "total": round(total, 1), "mdd": round(mdd, 1), "calmar": calmar}
+
+    # 1배 / 3배합성 — 전략(엔진) & 바이앤홀드
+    strat_1x = pos * dret - turn * cost - (pos > 0) * fee_d
+    bh_1x = dret.copy()
+    dret3 = 3.0 * dret
+    strat_3x = pos * dret3 - turn * cost - (pos > 0) * (fee_d + levfee_d)
+    bh_3x = dret3 - (fee_d + levfee_d)
+
+    out = {
+        "strat_1x": series_metrics(strat_1x), "bh_1x": series_metrics(bh_1x),
+        "strat_3x": series_metrics(strat_3x), "bh_3x": series_metrics(bh_3x),
+        "start": str(df["date"].iloc[0]), "end": str(df["date"].iloc[-1]),
+        "bars": len(df),
+    }
+    # 약세장 구간별 (지수가 그 기간을 포함할 때만)
+    windows = [("닷컴버블", "2000-03-01", "2002-10-31"),
+               ("금융위기", "2007-10-01", "2009-03-31"),
+               ("코로나", "2020-02-15", "2020-04-30"),
+               ("2022 약세장", "2022-01-01", "2022-12-31")]
+    wins = []
+    dser = dates
+    for nm, s, e in windows:
+        mask = (dser >= s) & (dser <= e)
+        if mask.sum() < 5:
+            continue
+        idx = np.where(mask.to_numpy())[0]
+        sl = slice(idx[0], idx[-1] + 1)
+        def wret(arr):
+            return round(float((np.cumprod(1.0 + arr[sl])[-1] - 1.0) * 100), 1)
+        def wmdd(arr):
+            eq = np.cumprod(1.0 + arr[sl]); pk = np.maximum.accumulate(eq)
+            return round(float((eq / pk - 1.0).min() * 100), 1)
+        wins.append({"name": nm, "from": s, "to": e,
+                     "bh_1x": wret(bh_1x), "strat_1x": wret(strat_1x),
+                     "bh_3x": wret(bh_3x), "strat_3x": wret(strat_3x),
+                     "strat_3x_mdd": wmdd(strat_3x), "bh_3x_mdd": wmdd(bh_3x)})
+    out["windows"] = wins
+    return out
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -702,10 +787,11 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     breakdown = breakdown_research(df)
     dipentry = dipentry_research(df, cost_bps, expense)
     trim_regime = trim_regime_compare(df, cost_bps, expense)
+    bear_hist = bear_history_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
-            "trim_regime": trim_regime,
+            "trim_regime": trim_regime, "bear_history": bear_hist,
             "cost_bps": cost_bps, "expense": expense}
