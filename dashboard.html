@@ -367,7 +367,7 @@
   .macrostat{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px}
   .ticktape{overflow:hidden;background:var(--panel);border:1px solid var(--border);border-radius:3px;
     margin:10px 0;height:34px;display:flex;align-items:center;position:relative}
-  .ticktape::before{content:'신호';position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;
+  .ticktape::before{content:'주의';position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;
     padding:0 11px;background:var(--panel2);color:var(--faint);font-family:var(--mono);font-size:10px;
     border-right:1px solid var(--border);z-index:2}
   .tapeinner{display:flex;white-space:nowrap;will-change:transform;animation:tape 38s linear infinite}
@@ -382,7 +382,7 @@
   .ticktape.mkt{margin-bottom:0}
   .ticktape.mkt::before{content:'시세'}
   .ticktape.mkt .tapeinner{animation-duration:40s}
-  .ticktape.agg::before{content:'종합'}
+  .ticktape.agg::before{content:'신호'}
   .ticktape.agg .tapeinner{animation-duration:44s}
   .tapeinner .ti.bear b{color:var(--stop)} .tapeinner .ti.bull b{color:var(--go)} .tapeinner .ti.neutral b{color:var(--muted)}
   .ti.bear .dot{background:var(--stop)} .ti.bull .dot{background:var(--go)} .ti.neutral .dot{background:var(--muted)}
@@ -1122,6 +1122,9 @@ function renderDivergence(d){
   const frac=Math.max(-1,Math.min(1,(c.score||0)/(c.max||4.2)));
   const pct=(frac*50); // -50%~+50% from center
   const cColor=c.score<=-0.9?RED:c.score>=0.9?GREEN:GRAY;
+  // 패널 테두리: 약세 다이버전스=빨강, 강세=초록, 미미=기본 (점멸 없음)
+  const dcard=document.getElementById('diverCard');
+  if(dcard){ dcard.style.borderColor = c.score<=-0.9?RED : c.score>=0.9?GREEN : 'var(--border)'; }
   const dv=(d.divergences||[]).map(x=>{
     const col=x.state==='bear'?RED:x.state==='bull'?GREEN:GRAY;
     const lab=x.state==='bear'?'약세':x.state==='bull'?'강세':'없음';
@@ -1143,7 +1146,12 @@ function renderDivergence(d){
       +"<div class='dvconsensus'><div class='dvclab' style='color:"+cColor+"'>"+c.label+"</div>"
       +"<div class='dvbar'><div class='dvbar-mid'></div><div class='dvbar-fill' style='background:"+cColor+";"
         +(frac<0?("right:50%;width:"+Math.abs(pct)+"%"):("left:50%;width:"+pct+"%"))+"'></div></div>"
-      +"<div class='dvcnum'>합의 "+(c.score>0?'+':'')+c.score+" / ±"+c.max+" · 강세 "+c.bull+" 약세 "+c.bear+"</div></div>"
+      +"<div class='dvcnum'>합의 "+(c.score>0?'+':'')+c.score+" / ±"+c.max+" · 강세 "+c.bull+" 약세 "+c.bear+"</div>"
+      +"<div class='btnote' style='margin-top:7px'>"+(
+        c.score<=-0.9?"가격은 오르는데 모멘텀이 약해지는 중 — <b style='color:"+RED+"'>상투·조정 주의</b> 신호. 다지표 동시 발생일수록 신뢰↑."
+        :c.score>=0.9?"가격은 빠지는데 모멘텀이 개선되는 중 — <b style='color:"+GREEN+"'>바닥·반등 가능</b> 신호. 다지표 동시 발생일수록 신뢰↑."
+        :"가격과 모멘텀 간 유의미한 괴리 없음 — 추세에 순응. 다이버전스는 추세 <b>둔화</b> 경고일 뿐 반전 확정 아님(참고용)."
+      )+"</div></div>"
     +"</div>"
     +"<div class='dvcol'><div class='dvhead'>과매수 / 과매도 <span class='hint'>과매수 "+d.ob_count+" · 과매도 "+d.os_count+"</span></div>"
       +oo
@@ -2159,6 +2167,10 @@ function renderPanic(x){
 }
 function renderExitPlan(x){
   const box=document.getElementById('exitPlanBody'); if(!box)return;
+  // 카드 테두리: 익절 신호(단계≥1) 있으면 빨강, 없으면 초록 (점멸 없음)
+  const epcard=document.getElementById('exitPlanCard');
+  if(epcard){ const trim=(x&&x.above200&&(x.stages_triggered||0)>0);
+    epcard.style.borderColor = trim?'#ff3b46':'#2bd07a'; }
   if(!x){box.innerHTML="<div class='none' style='font-size:11px;color:var(--faint)'>데이터 없음</div>";return;}
   if(!x.above200){
     box.innerHTML="<div class='ep-now' style='color:"+C.down+"'><b>200일선 아래</b> — 현금 보유 구간(홀딩 대상 아님). 재돌파 시 진입.</div>"
