@@ -113,6 +113,13 @@
   .mtfrow .mtf-sz{font-family:var(--mono);color:var(--faint);font-size:10px;margin-left:auto}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:13px 14px;transition:border-color .15s}
   .card:hover{border-color:var(--border2)}
+  /* 특별 테두리 패널은 hover에도 색 유지 (eng-panel·익절플랜·패닉그리드) */
+  .card.eng-panel:hover{border-color:var(--border)}
+  .eng-panel.pos:hover{border-color:#2bd07a}
+  .eng-panel.neg:hover{border-color:#ff3b46}
+  .card.exitplan:hover{border-color:var(--accent)}
+  #panicCard:hover{border-color:var(--border)}
+  #panicCard.panic-on:hover{border-color:#ff3b46}
   .card.final{background:var(--panel)}
   @keyframes breathe{0%,100%{opacity:1}50%{opacity:.4}}
   .risk-pulse{animation:breathe 1.15s ease-in-out infinite}
@@ -501,7 +508,7 @@
       </div>
     </div>
     <div class="card exitplan" id="exitPlanCard" style="margin-bottom:10px">
-      <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 70% 홀딩 유지)</span></div>
+      <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 55% 홀딩 유지)</span></div>
       <div id="exitPlanBody"></div>
     </div>
     <div class="card" id="panicCard" style="margin-bottom:10px">
