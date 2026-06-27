@@ -622,13 +622,7 @@
         <div class="kl-stop" id="klStop"></div>
       </div>
       <div class="card macro">
-        <div class="lab">거시 입력 <span class="hint">자동 수집 · 수동 조정(what-if)</span></div>
-        <label>VIX <span class="val" id="vixv">18</span>
-          <span class="mtag" id="vixTag" style="display:none">수동 <span class="rev" id="vixRev">↻ 자동(<span id="vixAuto">—</span>)</span></span></label>
-        <input type="range" id="vix" min="10" max="55" value="18" step="0.5">
-        <label>공포·탐욕 <span class="val" id="fngv">50</span>
-          <span class="mtag" id="fngTag" style="display:none">수동 <span class="rev" id="fngRev">↻ 자동(<span id="fngAuto">—</span>)</span></span></label>
-        <input type="range" id="fng" min="0" max="100" value="50" step="1">
+        <div class="lab">피보나치 되돌림 <span class="hint">스윙 고가/저가 입력 또는 자동</span></div>
         <label>피보나치 (스윙 고가 / 저가)</label>
         <div class="fibrow">
           <input type="number" id="fibHi" placeholder="고가" step="0.01">
@@ -1179,34 +1173,13 @@ document.querySelectorAll('#toggles button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#osc-tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#osc-tabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.osc=b.dataset.o;renderOsc();});
-state.macroOverride={vix:null,fng:null};   // null=서버 자동(시장심리), 값=수동 what-if
-function applyEngineMacro(m){               // renderEngine에서 호출: 엔진이 실제 쓴 매크로로 동기화
+state.macroOverride={vix:null,fng:null};   // 수동 조정 제거 — 항상 자동(서버 수집)
+function applyEngineMacro(m){               // renderEngine에서 호출: 엔진이 실제 쓴 매크로 값 동기화(레짐 로직용)
   if(!m)return;
-  [['vix',m.vix],['fng',m.fng]].forEach(function(kv){
-    var k=kv[0], v=kv[1]; if(v==null)return;
-    document.getElementById(k+'Auto').textContent=v;
-    if(state.macroOverride[k]==null){       // 수동 아님 → 엔진값 표시
-      document.getElementById(k).value=v;
-      document.getElementById(k+'v').textContent=v;
-      state.macro[k]=v;
-    }
-  });
+  if(m.vix!=null)state.macro.vix=m.vix;
+  if(m.fng!=null)state.macro.fng=m.fng;
 }
-function reloadMacro(){ load(); }           // 오버라이드 반영해 차트/엔진 재계산
-[['vix','vixv'],['fng','fngv']].forEach(function(p){
-  var el=document.getElementById(p[0]);
-  el.oninput=function(){ document.getElementById(p[1]).textContent=el.value;
-    state.macroOverride[p[0]]=parseFloat(el.value);
-    document.getElementById(p[0]+'Tag').style.display='inline'; };
-  el.onchange=function(){ reloadMacro(); };  // 놓는 순간 엔진 재계산(what-if)
-});
-function revertMacro(key){
-  state.macroOverride[key]=null;
-  document.getElementById(key+'Tag').style.display='none';
-  reloadMacro();
-}
-document.getElementById('vixRev').onclick=function(){revertMacro('vix');};
-document.getElementById('fngRev').onclick=function(){revertMacro('fng');};
+function reloadMacro(){ load(); }
 /* ---------- 설정 (임계값) ---------- */
 function renderSettings(){document.querySelectorAll('[data-set]').forEach(inp=>{inp.value=state.settings[inp.dataset.set];});}
 document.querySelectorAll('[data-set]').forEach(inp=>inp.addEventListener('change',()=>{
@@ -1771,7 +1744,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qo_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qp_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1788,7 +1761,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qo_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qp_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
