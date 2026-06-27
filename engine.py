@@ -104,7 +104,7 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
 
     # ── 검증된 익절 플랜 (200일선 이격도 단계별 익절: 20/35/50% → 보유 90/80/70%) ──
     # 백테스트로 TQQQ·SOXL 둘 다 평원 검증됨. 200선 아래=현금, 위=홀딩, 과열=일부 익절(핵심 70% 유지).
-    DISP_STEPS = [(0.20, 0.10), (0.35, 0.10), (0.50, 0.10)]   # (이격 임계, 단계 익절비율)
+    DISP_STEPS = [(0.20, 0.15), (0.35, 0.15), (0.50, 0.15)]   # (이격 임계, 단계 익절비율) — 15%씩(누적 45%, 핵심 55% 홀딩)
     if sma200 == sma200 and sma200 > 0:
         disp = (c - sma200) / sma200            # 현재 이격도(분수)
         cl_s = k["close"]; above_s = (cl_s > k["sma200"])
@@ -122,7 +122,7 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             reentry_signal = bool((recent > 0.20).any() and disp < 0.20 and disp == disp)
         # 권장 비중: 검증된 설정(익절 10%씩 + 재진입 여유 10%p 히스테리시스)을 경로 기반으로 계산.
         # level=적용된 익절 단계(0~3). 이격이 임계 위로↑면 익절, (직전임계-여유) 아래로↓면 재진입.
-        TH = [0.20, 0.35, 0.50]; CUT = 0.10; MARGIN = 0.10
+        TH = [0.20, 0.35, 0.50]; CUT = 0.15; MARGIN = 0.05
         disp_arr = (cl_s / k["sma200"] - 1.0).to_numpy()
         above_arr = above_s.to_numpy()
         warm_arr = k["sma200"].isna().to_numpy()
