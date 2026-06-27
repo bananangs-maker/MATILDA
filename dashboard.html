@@ -382,6 +382,10 @@
   .ticktape.mkt{margin-bottom:0}
   .ticktape.mkt::before{content:'시세'}
   .ticktape.mkt .tapeinner{animation-duration:40s}
+  .ticktape.agg::before{content:'종합'}
+  .ticktape.agg .tapeinner{animation-duration:44s}
+  .tapeinner .ti.bear b{color:var(--stop)} .tapeinner .ti.bull b{color:var(--go)} .tapeinner .ti.neutral b{color:var(--muted)}
+  .ti.bear .dot{background:var(--stop)} .ti.bull .dot{background:var(--go)} .ti.neutral .dot{background:var(--muted)}
   .mkti{font-family:var(--mono);font-size:11.5px;display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
   .mkti .mlab{color:var(--muted)}
   .mkti .mpct.up{color:var(--go)} .mkti .mpct.down{color:var(--stop)} .mkti .mpct.flat{color:var(--faint)}
@@ -450,6 +454,7 @@
   </div>
   <div class="ticktape mkt" id="mktTape"><div class="tapeinner" id="mktTapeInner"></div></div>
   <div class="ticktape" id="flagTape"><div class="tapeinner" id="flagTapeInner"></div></div>
+  <div class="ticktape agg" id="aggTape"><div class="tapeinner" id="aggTapeInner"></div></div>
   <div class="main">
     <div class="charts">
       <div class="drawbar" id="drawbar">
@@ -478,7 +483,7 @@
     </div>
   </div>
   <div id="deckmason">
-    <div class="enginerow" style="align-items:start">
+    <div class="enginerow">
       <div class="card eng-panel" id="eng200">
         <div class="lab">200MA engine <span class="hint">검증된 코어 · 200선 홀딩/현금 + 과열 익절 + 역배열 관망</span></div>
         <div style="display:flex;align-items:center;gap:13px">
@@ -1002,7 +1007,7 @@ async function load(){
     state.data=d; state.signals=d.signals;
     const mk=(d.markers||[]).concat(d.cross_markers||[]).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);
     state.markers=mk;
-    renderPrice(d); renderOsc(); decide(); renderDivergence(d.divergence_panel); loadDrawings();
+    renderPrice(d); renderOsc(); decide(); renderDivergence(d.divergence_panel); renderAggTape(d); loadDrawings();
     renderEngine(d.engine); renderSummary(d.summary);
     renderCrosses(d.ma_cross); renderCandles(d.candles_patterns);
     renderChartPatternList(d.chart_patterns); renderChartPatterns();
@@ -1079,6 +1084,33 @@ function decide(){
   const box=document.getElementById('flags');
   box.innerHTML=fl.length?fl.map(x=>'<div class="flag"><span class="tag '+x[0]+'">'+x[1]+'</span><span class="txt">'+x[2]+'</span></div>').join(''):'<div class="none">감지된 리스크 없음 — 신호 정렬 양호</div>';
   renderFlagTicker();
+}
+/* ---------- 신호 종합 티커 ---------- */
+function renderAggTape(d){
+  const inner=document.getElementById('aggTapeInner'); if(!inner||!d)return;
+  const items=[]; let bullN=0, bearN=0;
+  const add=(cls,label)=>{items.push("<span class='ti "+cls+"'><span class='dot'></span><b>"+label+"</b></span>");
+    if(cls==='bull')bullN++; else if(cls==='bear')bearN++;};
+  const dp=d.divergence_panel||{};
+  // 다이버전스
+  (dp.divergences||[]).forEach(x=>{ if(x.state==='bear')add('bear',x.name+' 약세 다이버전스');
+    else if(x.state==='bull')add('bull',x.name+' 강세 다이버전스'); });
+  // 과매수/과매도
+  (dp.overbought_oversold||[]).forEach(x=>{ if(x.state==='overbought')add('bear',x.name+' 과매수');
+    else if(x.state==='oversold')add('bull',x.name+' 과매도'); });
+  // 캔들 패턴 (최근 2봉)
+  (d.candles_patterns||[]).filter(p=>(p.bars_ago||0)<=2).forEach(p=>{
+    add(p.kind==='bull'?'bull':p.kind==='bear'?'bear':'neutral', p.name+(p.bars_ago?(' ('+p.bars_ago+'봉전)'):''));});
+  // 차트 패턴
+  (d.chart_patterns||[]).forEach(p=>{ add(p.dir==='bull'?'bull':p.dir==='bear'?'bear':'neutral',
+    (p.name_ko||p.name)+(p.confirmed?' ✓':' (미확정)'));});
+  // 앞에 카운트 요약
+  const summary="<span class='ti neutral'><span class='dot'></span><b>강세성 "+bullN+" · 약세성 "+bearN+"</b></span>";
+  const full=[summary].concat(items.length?items:["<span class='ti neutral'><span class='dot'></span>감지된 신호 없음</span>"]);
+  const base=full.join('');
+  if(inner.dataset.base===base)return;
+  inner.dataset.base=base;
+  buildTape(inner,full);
 }
 /* ---------- 보조지표 종합 패널 ---------- */
 function renderDivergence(d){
@@ -2385,9 +2417,20 @@ function renderFundamentals(f){
   const sgn=v=>v==null?'':(v>=0?C.up:C.down);
   pe.innerHTML=chip(p.ann_vol!=null?p.ann_vol+'%':'—','연율변동성')
     +chip(p.pos52!=null?p.pos52+'%':'—','52주위치')
-    +chip(p.ret_1y!=null?p.ret_1y+'%':'—','1년수익',sgn(p.ret_1y))
     +chip(p.mdd_1y!=null?p.mdd_1y+'%':'—','1년MDD',C.down);
   let html='';
+  // 기간 수익률 (모멘텀 — 1개월·3개월·1년)
+  html+="<div class='eng-metrics' style='margin-top:10px'>"
+    +"<span style='color:"+sgn(p.ret_1m)+"'>1개월 "+(p.ret_1m==null?'—':(p.ret_1m>=0?'+':'')+p.ret_1m+'%')+"</span>"
+    +"<span style='color:"+sgn(p.ret_3m)+"'>3개월 "+(p.ret_3m==null?'—':(p.ret_3m>=0?'+':'')+p.ret_3m+'%')+"</span>"
+    +"<span style='color:"+sgn(p.ret_1y)+"'>1년 "+(p.ret_1y==null?'—':(p.ret_1y>=0?'+':'')+p.ret_1y+'%')+"</span>"
+    +"</div>";
+  // 52주 레인지 (현재가 위치)
+  if(p.hi52!=null&&p.lo52!=null){
+    html+="<div class='eng-metrics' style='margin-top:6px'>"
+      +"<span>현재가 $"+p.price+(p.day_chg!=null?" ("+(p.day_chg>=0?'+':'')+p.day_chg+"%)":"")+"</span>"
+      +"<span>52주 고 $"+p.hi52+"</span><span>저 $"+p.lo52+"</span></div>";
+  }
   if(f.leverage){
     const L=f.leverage;
     html+="<div class='eng-metrics' style='margin-top:10px'>";
@@ -2491,7 +2534,7 @@ function layoutMason(){
 function scheduleMason(){clearTimeout(window._mt);window._mt=setTimeout(layoutMason,60);}
 window.addEventListener('resize',scheduleMason);
 window.addEventListener('resize',function(){clearTimeout(window._tt);window._tt=setTimeout(function(){
-  ['flagTapeInner','mktTapeInner'].forEach(function(id){var el=document.getElementById(id); if(el&&el._items&&el._items.length)buildTape(el,el._items);});},120);});
+  ['flagTapeInner','mktTapeInner','aggTapeInner'].forEach(function(id){var el=document.getElementById(id); if(el&&el._items&&el._items.length)buildTape(el,el._items);});},120);});
 (function(){var sm=document.getElementById('spMark'); if(sm)sm.innerHTML=faceSVG(1);
   var sp=document.getElementById('splash'); if(sp){setTimeout(function(){sp.classList.add('hide');
     setTimeout(function(){sp.style.display='none';},650);},1500);}})();
