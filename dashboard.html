@@ -2335,7 +2335,43 @@ function renderExitPlan(x){
                         :("→ 현재 과열 아님, 전량("+n+"주) 홀딩");};
   if(inp){inp.oninput=()=>{state.exitShares=inp.value;upd();};upd();}
 }
-function renderEng200(x){
+function matildaSays(x, m){
+  // "맑은 정신의 준호가 흔들리는 준호에게 미리 써둔 한 마디" — 상황별 고정 메시지.
+  // 실시간 클로드가 아니라, 준호 자신의 원칙의 거울. 항상 옳은 조언이 아니라 '약속'을 상기시키는 장치.
+  const ret1=(m&&m.ret1!=null)?m.ret1:0;
+  const disp=(x.disparity!=null)?x.disparity:0;
+  let title="마틸다의 한 마디", msg="", mood="calm";
+  if(!x.above200){
+    if(ret1<=-6 || disp<=-6){
+      mood="alert";
+      msg="큰 폭의 하락이 왔고, 너는 지금 흔들리고 있다. 그래도 청산이다. 홀딩하면 안 된다. 이 하락이 일회성 반등으로 끝날지, 대세하락의 시작일지는 지금 알 수 없다. 모를 때는 살아남는 쪽을 택한다 — 그게 7년간 네가 못 해서 다친 바로 그 규율이다. 진정하고, 엔진의 신호를 따라가라. 갭으로 아프게 빠져나와도, 홀딩해서 시드가 녹는 것보다 낫다.";
+    } else {
+      mood="cash";
+      msg="200일선 아래다. 지금은 보유할 자리가 아니라 기다릴 자리다. 현금을 들고 있는 건 패배가 아니라 다음 기회를 위한 실탄이다. 떨어지는 칼날을 미리 받지 마라. 재돌파가 확인되면 그때 들어가도 늦지 않다.";
+    }
+  } else if(x.watch_mode){
+    mood="cash";
+    msg="200선 위지만 역배열에 200선도 꺾였다 — 대세하락의 얼굴이다. 검증으로 확인했듯, 이 구간을 피하는 것만으로 최악의 손실을 크게 줄인다. 욕심내지 말고 관망하라. 추세가 돌아오면 엔진이 알려준다.";
+  } else if(x.entry_signal){
+    mood="calm";
+    msg="막 200선을 다시 넘었다. ‘진입하자마자 떨어지면 어쩌지’ 하는 두려움이 올라올 것이다. 그 공포는 대개 진입 전의 유령이다. 사이징은 이미 정해뒀고, 틀리면 200선이 다시 너를 빼준다. 정해진 비중대로, 흔들림 없이 들어가라.";
+  } else if(x.disparity>=25){
+    mood="warn";
+    msg="이격이 깊다. 수익이 달콤할수록 ‘더 담을까’ 하는 공격 본능이 깨어난다. 하지만 지금은 익절 플랜이 작동하는 구간이지 추격하는 구간이 아니다. 그 본능은 계좌 B에서 풀어라. 코어는 규율대로 핵심 비중만 지킨다.";
+  } else if(x.reentry_signal){
+    mood="calm";
+    msg="과열이 풀렸다. 덜어냈던 비중을 계획대로 되넣는 구간이다. 감이 아니라 플랜에 따라 복원하라.";
+  } else {
+    mood="calm";
+    msg="200선 위, 추세는 유효하다. 지금 할 일은 아무것도 하지 않는 것이다. 매일 들여다보며 만지작거리고 싶은 충동 — 그게 수익을 갉아먹는다. 마틸다는 자기 보폭으로 묵묵히 간다. 너도 그렇게 하라.";
+  }
+  const col = mood==="alert"?RED : mood==="warn"?"#E0A458" : mood==="cash"?"#9aa0a6" : GREEN;
+  const bg = mood==="alert"?"rgba(192,57,43,.10)" : mood==="warn"?"rgba(224,164,88,.10)" : mood==="cash"?"rgba(150,160,166,.08)" : "rgba(46,160,67,.08)";
+  return "<div class='matilda-say' style='margin-top:8px;padding:10px 12px;border-left:3px solid "+col+";background:"+bg+";border-radius:0 4px 4px 0'>"
+    +"<div style='font-size:10px;font-weight:700;color:"+col+";letter-spacing:.5px;margin-bottom:4px'>🎒 마틸다의 한 마디</div>"
+    +"<div style='font-size:11.5px;line-height:1.65;color:var(--ink)'>"+msg+"</div></div>";
+}
+function renderEng200(x, engMetrics){
   const card=document.getElementById('eng200'), face=document.getElementById('eng200Face'),
         call=document.getElementById('eng200Call'), det=document.getElementById('eng200Detail'),
         fill=document.getElementById('eng200Fill'), extra=document.getElementById('eng200Extra');
@@ -2368,7 +2404,8 @@ function renderEng200(x){
       +(x.sma200?"<span>200일선 $"+x.sma200+"</span>":"")
       +(x.disparity!=null?"<span style='color:"+RED+"'>이격 "+x.disparity+"%</span>":"")+"</div>"
       +engBadges({panic:panicActive})
-      +"<div class='eng-spacer'></div>";
+      +"<div class='eng-spacer'></div>"
+      +matildaSays(x, engMetrics);
     return;
   }
   if(x.watch_mode){
@@ -2382,7 +2419,8 @@ function renderEng200(x){
       +(x.disparity!=null?"<span>이격 "+x.disparity+"%</span>":"")+"</div>"
       +engBadges({watch:true, panic:panicActive})
       +"<div class='eng-spacer'></div>"
-      +"<div class='btnote' style='margin-top:6px'>50일선<200일선 + 200선 하락 = 대세하락 신호. 검증상 이 구간 회피가 역배열 MDD를 크게 줄임.</div>";
+      +"<div class='btnote' style='margin-top:6px'>50일선<200일선 + 200선 하락 = 대세하락 신호. 검증상 이 구간 회피가 역배열 MDD를 크게 줄임.</div>"
+      +matildaSays(x, engMetrics);
     return;
   }
   card.classList.add('pos');                           // 홀딩 = 초록 점멸
@@ -2402,11 +2440,11 @@ function renderEng200(x){
     +"<span style='color:"+(x.disparity>=20?AMBER:GREEN)+"'>이격 +"+x.disparity+"%</span></div>"
     +sigRow+entry
     +"<div class='eng-spacer'></div>"
-    +"<div class='btnote' style='margin-top:6px'>구체적 익절 주수·가격은 아래 <b>과열 분할 익절 플랜</b> 참고.</div>";
+    +matildaSays(x, engMetrics);
 }
 function renderEngine(e){
   if(!e)return;
-  renderEng200(e.exit_plan);
+  renderEng200(e.exit_plan, e.metrics||{});
   renderExitPlan(e.exit_plan);
   state._lastExitPlan=e.exit_plan; renderPanic(e.exit_plan);
 }
