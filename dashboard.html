@@ -502,10 +502,12 @@
         <div class="sizebar"><div class="sizefill" id="eng200Fill" style="width:0%"></div></div>
         <div id="eng200Extra"></div>
       </div>
-      <div class="card">
+      <div class="card" style="display:flex;flex-direction:column">
         <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
-        <div class="senti" id="fundPrice"></div>
-        <div id="fundExtra"></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px">
+          <div class="senti" id="fundPrice"></div>
+          <div id="fundExtra"></div>
+        </div>
       </div>
     </div>
     <div class="card" id="diverCard" style="margin-bottom:10px">
@@ -2368,7 +2370,6 @@ function matildaSays(x, m){
   const col = mood==="alert"?RED : mood==="warn"?"#E0A458" : mood==="cash"?"#9aa0a6" : GREEN;
   const bg = mood==="alert"?"rgba(192,57,43,.10)" : mood==="warn"?"rgba(224,164,88,.10)" : mood==="cash"?"rgba(150,160,166,.08)" : "rgba(46,160,67,.08)";
   return "<div class='matilda-say' style='margin-top:8px;padding:10px 12px;border-left:3px solid "+col+";background:"+bg+";border-radius:0 4px 4px 0'>"
-    +"<div style='font-size:10px;font-weight:700;color:"+col+";letter-spacing:.5px;margin-bottom:4px'>🎒 마틸다의 한 마디</div>"
     +"<div style='font-size:11.5px;line-height:1.65;color:var(--ink)'>"+msg+"</div></div>";
 }
 function renderEng200(x, engMetrics){
