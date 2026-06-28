@@ -1711,16 +1711,27 @@ function renderQuant(d){
     // ⑦ 장기 약세장 검증
     const bh=d.bear_history;
     if(bh&&bh.engines){
+      // 레버리지 ETF 가드: ⑦은 1배 지수(QQQ/SPY)용. 3배 ETF를 넣으면 ×3합성=9배가 되어 무의미.
+      const _lev=(state.data&&state.data.fundamentals&&state.data.fundamentals.leverage&&state.data.fundamentals.leverage.leverage)||1;
+      const _isLev=_lev&&_lev>1.2;
       const m=(x)=>x?("칼마 "+(x.calmar!=null?x.calmar:'—')+" · CAGR "+(x.cagr!=null?x.cagr+'%':'—')+" · MDD "+x.mdd+"% · 총 "+x.total+"%"):'—';
       const engNames=Object.keys(bh.engines);
-      let h="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11px'>"
-        +"<b>기간 "+bh.start+" ~ "+bh.end+"</b> ("+bh.bars+"봉)<br>"
+      let h="";
+      if(_isLev){
+        h+="<div style='border:1px solid var(--stop);border-radius:3px;padding:10px 12px;margin-bottom:9px;font-size:11.5px;color:var(--stop)'>"
+          +"⚠ <b>이 패널은 현재 종목("+state.ticker+", "+_lev+"배)에 유효하지 않습니다.</b> "
+          +"⑦은 <b>1배 지수(QQQ·SPY)</b> 전용입니다 — 1배에 ×3을 합성해 'TQQQ가 있었다면'을 추정하는 검증이에요. "
+          +"<br>지금처럼 이미 <b>"+_lev+"배</b>인 ETF를 넣으면: '1배(지수)' 행은 이미 "+_lev+"배를 1배로 오인하고, <b>'×3 합성' 행은 "+_lev+"×3 ≈ "+Math.round(_lev*3)+"배</b>가 되어 MDD가 −99% 수준으로 무너집니다(엔진 결함이 아니라 과대 레버리지 산물). "
+          +"<br><b>올바른 사용</b>: 검색창에 <b>QQQ</b> 입력 → 'max 기간' 체크 → 이 패널 확인. (닷컴·2008 포함, ×3=TQQQ 추정)</div>";
+      }
+      h+="<div style='border:1px solid var(--border2);border-radius:3px;padding:9px 11px;margin-bottom:8px;font-size:11px"+(_isLev?";opacity:.5":"")+"'>"
+        +"<b>기간 "+bh.start+" ~ "+bh.end+"</b> ("+bh.bars+"봉)"+(_isLev?" <span style='color:var(--stop)'>· 레버리지 입력 → 수치 무효</span>":"")+"<br>"
         +"<table class='wftab' style='margin-top:6px'><tr><th></th><th>200MA engine</th><th>20-parameter engine</th><th>바이앤홀드</th></tr>"
         +"<tr><td><b>1배 (지수)</b></td>"
         +"<td style='color:var(--go)'>"+m(bh.engines['200MA engine'].strat_1x)+"</td>"
         +"<td style='color:var(--muted)'>"+m(bh.engines['20-parameter engine'].strat_1x)+"</td>"
         +"<td style='color:var(--muted)'>"+m(bh.bh_1x)+"</td></tr>"
-        +"<tr><td><b>×3 합성</b></td>"
+        +"<tr><td><b>×3 합성"+(_isLev?" <span style='color:var(--stop)'>(≈"+Math.round(_lev*3)+"배!)</span>":"")+"</b></td>"
         +"<td style='color:var(--go)'>"+m(bh.engines['200MA engine'].strat_3x)+"</td>"
         +"<td style='color:var(--caution)'>"+m(bh.engines['20-parameter engine'].strat_3x)+"</td>"
         +"<td style='color:var(--stop)'>"+m(bh.bh_3x)+"</td></tr>"
