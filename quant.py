@@ -817,74 +817,101 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
 
 
 def cross_pretrade_research(df, cost_bps=5.0, expense=0.0095):
-    """[200선 부근 크로스 선매매 검증] 준호 가설:
-    주가가 200일선 ±Z% 이내(부근)에 있을 때, MACD 골든/데드 크로스로 향후
-    상향/하향 돌파 방향을 미리 판단해 선매매하면 — 200선 실제 돌파를 기다리는
-    기본 코어보다 수익률/MDD/칼마가 개선되는가?
-    기본(base): 200선 위=100%, 아래=0% (단순 200MA).
-    선매매(pre): 200선 부근(±Z%)에서 최근 크로스 방향으로 선반영, 그 외엔 base와 동일.
-    여러 Z(2/3/5%)로 민감도 확인. 과적합 방지 위해 TQQQ·SOXL 둘 다에서 봐야 함(프론트 안내)."""
+    """[200선 부근 크로스 선매매 격자검증] 준호 가설 + 세분화.
+    주가가 200일선 ±Z% 부근일 때, 크로스 신호 방향으로 돌파를 선반영하면 단순 200MA보다 나은가.
+    축A 신호: MACD만 / 이평크로스만(20/60·50/200·5/20) / 둘다(교집합).
+    축B 존: 1.0~3.5% 촘촘히.
+    각 칸에 칼마·수익(기본대비) + 선매매 적중률. 평원(이웃 Z도 함께 좋은가)으로 과적합 점검.
+    ※ 한 종목·한 칸만 좋은 건 과적합 — 4종목 일관 + 넓은 평원이라야 의미."""
     df = df.reset_index(drop=True)
     close = df["close"]
     sma200 = close.rolling(200).mean()
-    mline, msig, _ = I.macd(close)
     warm = sma200.isna().to_numpy()
     above = (close > sma200).to_numpy()
     disp = (close / sma200 - 1.0).to_numpy()
     idx = df.index
     n = len(df)
-    # MACD 크로스 방향 (골든=+1, 데드=-1), 최근 LB봉 이내 유지
-    cu = ((mline > msig) & (mline.shift(1) <= msig.shift(1))).to_numpy()
-    cd = ((mline < msig) & (mline.shift(1) >= msig.shift(1))).to_numpy()
-    LB = 5
-    recent = np.zeros(n)
-    last_dir, last_i = 0, -999
-    for i in range(n):
-        if cu[i]:
-            last_dir, last_i = 1, i
-        elif cd[i]:
-            last_dir, last_i = -1, i
-        recent[i] = last_dir if (i - last_i) <= LB else 0
+    LB, K = 5, 10
+    ZONES = [0.010, 0.015, 0.020, 0.025, 0.030, 0.035]
+
+    def cross_dir(up_bool, dn_bool):
+        """크로스 이벤트(상향/하향)를 최근 LB봉 이내 유지되는 방향(+1/-1/0)으로."""
+        up = np.asarray(up_bool); dn = np.asarray(dn_bool)
+        r = np.zeros(n); ld, li = 0, -999
+        for i in range(n):
+            if up[i]:
+                ld, li = 1, i
+            elif dn[i]:
+                ld, li = -1, i
+            r[i] = ld if (i - li) <= LB else 0
+        return r
+
+    # MACD 크로스
+    mline, msig, _ = I.macd(close)
+    macd_dir = cross_dir((mline > msig) & (mline.shift(1) <= msig.shift(1)),
+                         (mline < msig) & (mline.shift(1) >= msig.shift(1)))
+    # 이평 크로스 (기간쌍별)
+    ma_pairs = {"20/60": (20, 60), "50/200": (50, 200), "5/20": (5, 20)}
+    ma_dirs = {}
+    for nm, (f, s) in ma_pairs.items():
+        fa = close.rolling(f).mean(); sa = close.rolling(s).mean()
+        ma_dirs[nm] = cross_dir((fa > sa) & (fa.shift(1) <= sa.shift(1)),
+                                (fa < sa) & (fa.shift(1) >= sa.shift(1)))
 
     def E(arr):
-        s = pd.Series(arr, index=idx, dtype=float)
-        s[pd.Series(warm, index=idx)] = np.nan
-        return s
+        ser = pd.Series(arr, index=idx, dtype=float)
+        ser[pd.Series(warm, index=idx)] = np.nan
+        return ser
 
     def run(e):
         strat, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
-        m = _metrics(strat, pos, turn)
-        return m
+        return _metrics(strat, pos, turn)
 
     e_base = np.where(above, 1.0, 0.0)
     base_m = run(E(e_base))
-    out = {"base": base_m, "variants": {}}
-    # 선매매 적중률: 부근에서 선매매한 방향이 K봉 내 실제 돌파로 확인됐나
-    K = 10
-    for Z in (0.02, 0.03, 0.05):
+
+    def variant(direction, Z):
+        """방향신호 + 존Z로 선매매 비중배열 + 적중률."""
         zone = np.abs(disp) <= Z
-        e_pre = e_base.copy()
-        hits = 0; trades = 0
+        e = e_base.copy(); hits = 0; trades = 0
         for i in range(n):
-            if warm[i] or not zone[i] or recent[i] == 0:
+            if warm[i] or not zone[i] or direction[i] == 0:
                 continue
-            if recent[i] > 0:
-                e_pre[i] = 1.0
-            else:
-                e_pre[i] = 0.0
-            # 선매매가 base와 달라진 경우만 '선매매 시도'로 카운트 + 적중 평가
-            if e_pre[i] != e_base[i]:
+            nv = 1.0 if direction[i] > 0 else 0.0
+            if nv != e_base[i]:
                 trades += 1
                 j = min(n - 1, i + K)
-                if recent[i] > 0 and above[j]:
+                if (direction[i] > 0 and above[j]) or (direction[i] < 0 and not above[j]):
                     hits += 1
-                elif recent[i] < 0 and not above[j]:
-                    hits += 1
-        m = run(E(e_pre))
+            e[i] = nv
+        m = run(E(e))
         m["trades"] = trades
         m["hit_rate"] = round(hits / trades * 100, 1) if trades else None
-        out["variants"]["±%d%%" % round(Z * 100)] = m
-    return out
+        m["d_calmar"] = round(m["calmar"] - base_m["calmar"], 2)
+        m["d_total"] = round(m["total"] - base_m["total"], 1)
+        return m
+
+    # 신호 종류별 방향배열
+    signals = {"MACD": macd_dir}
+    for nm in ma_pairs:
+        signals["이평 " + nm] = ma_dirs[nm]
+    # 둘다(교집합): MACD와 (주력)20/60이 같은 방향일 때만
+    both = np.where((macd_dir != 0) & (macd_dir == ma_dirs["20/60"]), macd_dir, 0.0)
+    signals["MACD+이평20/60"] = both
+
+    grid = {}
+    for snm, dirarr in signals.items():
+        row = {}
+        for Z in ZONES:
+            row["±%.1f%%" % (Z * 100)] = variant(dirarr, Z)
+        # 평원 점검: d_calmar>0 인 존이 연속으로 몇 개인가(최대 연속)
+        flags = [row[k]["d_calmar"] > 0.02 for k in row]
+        best = 0; cur = 0
+        for f in flags:
+            cur = cur + 1 if f else 0
+            best = max(best, cur)
+        grid[snm] = {"cells": row, "plateau": best, "n_zones": len(ZONES)}
+    return {"base": base_m, "zones": ["±%.1f%%" % (z * 100) for z in ZONES], "grid": grid}
 
 
 def analyze(df, cost_bps=5.0, expense=0.0095):

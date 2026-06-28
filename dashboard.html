@@ -122,6 +122,8 @@
   .dvw{font-family:var(--mono);font-size:10.5px;color:var(--faint);min-width:34px;text-align:right}
   .dvs{font-family:var(--mono);font-size:10.5px;font-weight:700;border:1px solid;border-radius:2px;padding:2px 8px;min-width:42px;text-align:center}
   .dvconsensus{margin-top:10px;padding-top:11px;border-top:1px solid var(--border2)}
+  .qgrid td.qcell{text-align:center;padding:5px 7px;line-height:1.25}
+  .qgrid .qcsub{display:block;font-size:9px;color:var(--faint);font-weight:400}
   .dvfull-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:center}
   @media(max-width:760px){.dvfull-grid{grid-template-columns:1fr;gap:10px}}
   .dvclab{font-family:var(--disp);font-size:13px;font-weight:700;margin-bottom:6px}
@@ -1740,22 +1742,31 @@ function renderQuant(d){
       }
       document.getElementById('qBearHist').innerHTML=h;
     }
-    // ⑧ 200선 부근 크로스 선매매 검증
+    // ⑧ 200선 부근 크로스 선매매 격자검증
     const cp=d.cross_pretrade;
-    if(cp&&cp.base){
-      const b=cp.base;
-      const cell=(m,k,suf)=>{const v=m[k]; const cls=(k==='mdd'||v<0)?'neg':(k==='total'&&v>=0?'pos':''); 
-        return "<td class='"+cls+"'>"+(v==null?'—':((k==='total'&&v>=0?'+':'')+v+(suf||'')))+"</td>";};
-      let h="<table class='wftab'><tr><th>방식</th><th>총수익</th><th>MDD</th><th>칼마</th><th>선매매 시도</th><th>적중률</th><th>판정</th></tr>";
-      h+="<tr><td><b>기본 (단순 200MA)</b></td>"+cell(b,'total','%')+cell(b,'mdd','%')+cell(b,'calmar','')+"<td>—</td><td>—</td><td>기준</td></tr>";
-      Object.keys(cp.variants).forEach(z=>{const m=cp.variants[z];
-        const dCal=m.calmar-b.calmar, dTot=m.total-b.total;
-        const verdict=(dCal>0.03&&dTot>0)?"<span style='color:var(--up)'>개선</span>":(dCal<-0.03||dTot<-2)?"<span style='color:var(--down)'>악화</span>":"<span style='color:var(--muted)'>비슷</span>";
-        h+="<tr><td>선매매 "+z+"</td>"+cell(m,'total','%')+cell(m,'mdd','%')+cell(m,'calmar','')
-          +"<td>"+(m.trades||0)+"</td><td>"+(m.hit_rate==null?'—':m.hit_rate+'%')+"</td><td>"+verdict+"</td></tr>";});
+    if(cp&&cp.base&&cp.grid){
+      const b=cp.base, zones=cp.zones;
+      // 칼마 기준 칸 색: Δ칼마>0 초록, <0 빨강
+      const cellHtml=(m)=>{
+        if(!m||m.hit_rate==null&&m.trades===0) return "<td class='qcell' style='color:var(--faint)'>—</td>";
+        const dc=m.d_calmar, col=dc>0.02?'var(--up)':dc<-0.02?'var(--down)':'var(--muted)';
+        return "<td class='qcell' style='color:"+col+"'><b>"+(dc>0?'+':'')+dc+"</b>"
+          +"<span class='qcsub'>"+(m.d_total>0?'+':'')+m.d_total+"% · "+(m.hit_rate==null?'—':m.hit_rate+'%')+"</span></td>";
+      };
+      let h="<div class='btnote' style='margin-bottom:7px'>기본(단순 200MA): 수익 <b>"+(b.total>=0?'+':'')+b.total+"%</b> · MDD "+b.mdd+"% · 칼마 <b>"+b.calmar+"</b>. 아래는 신호×존별 <b>기본 대비 Δ칼마</b>(큰 글씨) / Δ수익 · 적중률(작은 글씨).</div>";
+      h+="<table class='wftab qgrid'><tr><th>신호 \\ 존</th>";
+      zones.forEach(z=>h+="<th>"+z+"</th>");
+      h+="<th>평원</th></tr>";
+      Object.keys(cp.grid).forEach(snm=>{
+        const g=cp.grid[snm];
+        h+="<tr><td style='text-align:left'>"+snm+"</td>";
+        zones.forEach(z=>h+=cellHtml(g.cells[z]));
+        const pl=g.plateau, plcol=pl>=4?'var(--up)':pl>=2?'var(--caution)':'var(--muted)';
+        h+="<td style='color:"+plcol+"'><b>"+pl+"</b>/"+g.n_zones+"</td></tr>";
+      });
       h+="</table>";
-      h+="<div class='btnote' style='margin-top:7px'>주가가 200일선 ±Z% 부근일 때 MACD 크로스(최근 5봉) 방향으로 선매매 → 단순 200MA 대비 비교. <b>적중률</b>=선매매 방향이 10봉 내 실제 돌파로 확인된 비율. "
-        +"<b style='color:var(--caution)'>중요</b>: 이 종목 한 종목에서 개선돼도 채택 금지 — <b>TQQQ·SOXL 둘 다</b> 개선돼야 의미. 한쪽만이면 과적합(특히 SOXL 고변동 구간 주의). 매매원칙(200MA 코어) 변경이 아니라 '부근 선반영' 효과 검증용.</div>";
+      h+="<div class='btnote' style='margin-top:7px'><b>읽는 법</b>: 초록 칸=기본보다 칼마↑, 빨강=↓. <b>평원</b>=Δ칼마>0인 존이 연속 몇 칸인지(연속 4+ = 넓은 평원=신뢰, 1~2 = 뾰족한 봉우리=과적합 의심). "
+        +"<b style='color:var(--caution)'>판정 원칙</b>: ①넓은 평원(특정 존만 X) ②<b>4종목(TQQQ·SOXL·QQQ·SPY) 일관</b> 둘 다 충족해야 의미. 한 종목·한 칸만 좋으면 과거 노이즈에 맞춘 과적합. 매매원칙 변경이 아니라 효과 검증용.</div>";
       document.getElementById('qCrossPre').innerHTML=h;
     }
     // 단순 베이스라인 비교
@@ -1823,7 +1834,7 @@ function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qq_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qr_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1840,7 +1851,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qq_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qr_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
