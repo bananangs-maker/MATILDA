@@ -914,6 +914,162 @@ def cross_pretrade_research(df, cost_bps=5.0, expense=0.0095):
     return {"base": base_m, "zones": ["±%.1f%%" % (z * 100) for z in ZONES], "grid": grid}
 
 
+def _div_sign_series(close, ind, lookback=40, win=3):
+    """as-of-time 다이버전스 부호(+1 강세/-1 약세/0). 피벗은 win봉 뒤 확정 → 미래참조 차단.
+    패널 divergence()와 동일 판정(강세 우선), 단 각 시점에서 그때까지 '확정된' 피벗만 사용."""
+    cv = np.asarray(close, float); iv = np.asarray(ind, float)
+    n = len(cv)
+    his, los = [], []  # (known_at, pivot_idx)
+    for i in range(win, n - win):
+        seg = cv[i - win:i + win + 1]
+        if cv[i] == seg.max():
+            his.append((i + win, i))
+        if cv[i] == seg.min():
+            los.append((i + win, i))
+    out = np.zeros(n)
+    hi_ptr = lo_ptr = 0
+    known_hi, known_lo = [], []
+    for t in range(n):
+        while hi_ptr < len(his) and his[hi_ptr][0] <= t:
+            known_hi.append(his[hi_ptr][1]); hi_ptr += 1
+        while lo_ptr < len(los) and los[lo_ptr][0] <= t:
+            known_lo.append(los[lo_ptr][1]); lo_ptr += 1
+        sign = 0
+        ll = [p for p in known_lo if p > t - lookback]
+        if len(ll) >= 2:
+            a, b = ll[-2], ll[-1]
+            if cv[b] < cv[a] and iv[b] > iv[a]:
+                sign = 1
+        if sign == 0:
+            hh = [p for p in known_hi if p > t - lookback]
+            if len(hh) >= 2:
+                a, b = hh[-2], hh[-1]
+                if cv[b] > cv[a] and iv[b] < iv[a]:
+                    sign = -1
+        out[t] = sign
+    return out
+
+
+def _trade_stats(strat, pos):
+    """포지션 시계열에서 거래당 통계: 거래수, 승률, 거래당 기대값(%), time-in-market."""
+    pos = np.nan_to_num(np.asarray(pos, float), nan=0.0)
+    r = np.nan_to_num(np.asarray(strat, float), nan=0.0)
+    tim = float(np.mean(pos > 0)) * 100 if len(pos) else 0.0
+    trades = []; in_pos = False; eq = 1.0
+    for i in range(len(pos)):
+        if pos[i] > 0 and not in_pos:
+            in_pos = True; eq = 1.0
+        if in_pos:
+            eq *= (1.0 + (r[i] if i < len(r) else 0.0))
+        if (pos[i] == 0 or i == len(pos) - 1) and in_pos:
+            in_pos = False; trades.append(eq - 1.0)
+    nt = len(trades)
+    wins = [x for x in trades if x > 0]
+    win = (len(wins) / nt * 100) if nt else None
+    exp = (float(np.mean(trades)) * 100) if nt else None
+    return {"trades": nt, "win_rate": round(win, 1) if win is not None else None,
+            "expectancy": round(exp, 2) if exp is not None else None,
+            "time_in_market": round(tim, 1)}
+
+
+def divergence_pretrade_research(df, cost_bps=5.0, expense=0.0095):
+    """[다이버전스 선매매 검증] 다른 세션 설계 + 평원/4종목/단순화 방어.
+    A: 200MA 단독(기준) / B: 다이버전스 단독 / C: 200MA+다이버전스 선행트리거 / D: Buy&Hold.
+    score = Σ(부호×가중치) — 강세 다이버전스 +(매수), 약세 -(청산). 임계 S를 스윕(평원 점검).
+    단순화 대조: 5지표(중복 많음) vs 2축(RSI=모멘텀·OBV=거래량만). 미래참조 차단(피벗 win봉 지연).
+    ※ 5지표가 같은 종가 피벗을 써서 정보중복 큼 → 과적합/무의미 기각 가능성 높음(검증용)."""
+    df = df.reset_index(drop=True)
+    close = df["close"]
+    sma200 = close.rolling(200).mean()
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index; n = len(df)
+    # 5개 지표 부호 시계열 (패널과 동일 지표)
+    rsi14 = I.rsi(close, 14)
+    mline, _, _ = I.macd(close)
+    _, stoch_d = I.stoch(df)
+    mfi14 = I.mfi(df, 14)
+    obv_s = I.obv(df)
+    sgn = {
+        "RSI": _div_sign_series(close, rsi14), "MACD": _div_sign_series(close, mline),
+        "STOCH": _div_sign_series(close, stoch_d), "MFI": _div_sign_series(close, mfi14),
+        "OBV": _div_sign_series(close, obv_s),
+    }
+    W = {"RSI": 1.0, "MACD": 1.0, "STOCH": 0.8, "MFI": 0.7, "OBV": 0.7}
+    score5 = sum(W[k] * sgn[k] for k in W)               # 5지표 가중합 (max 4.2)
+    score2 = 1.0 * sgn["RSI"] + 1.0 * sgn["OBV"]         # 2축: 모멘텀(RSI)+거래량(OBV) (max 2.0)
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float); s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def run(e):
+        strat, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
+        m = _metrics(strat, pos, turn); m.update(_trade_stats(strat, pos)); return m
+
+    # 기준 A / 벤치 D
+    A = run(E(np.where(above, 1.0, 0.0)))
+    D = run(E(np.ones(n)))
+
+    def stratB(score, S):
+        """다이버전스 단독: 강세 score>=S 매수, 약세 score<=-S 청산, 그 외 유지."""
+        e = np.zeros(n); cur = 0.0
+        for i in range(n):
+            if score[i] >= S: cur = 1.0
+            elif score[i] <= -S: cur = 0.0
+            e[i] = cur
+        return e
+
+    def stratC(score, S, Z=0.03, K=10):
+        """200MA + 선행: 200선 ±Z% 부근에서 강세면 선진입, 약세면 선청산. 그 외 200MA.
+        헛진입(whipsaw): 선진입했으나 K봉 내 실제 200상향 미확정 비율/손익."""
+        base = np.where(above, 1.0, 0.0); e = base.copy()
+        pre_up = 0; pre_up_fail = 0
+        for i in range(n):
+            if warm[i] or abs(disp[i]) > Z: continue
+            if score[i] >= S:
+                if base[i] == 0.0:  # 선진입(아직 200 아래인데 미리 매수)
+                    pre_up += 1
+                    j = min(n - 1, i + K)
+                    if not above[j]: pre_up_fail += 1
+                e[i] = 1.0
+            elif score[i] <= -S:
+                e[i] = 0.0
+        wf = round(pre_up_fail / pre_up * 100, 1) if pre_up else None
+        return e, pre_up, wf
+
+    SCORES5 = [0.7, 0.9, 1.4, 2.0, 2.8]
+    SCORES2 = [1.0, 2.0]   # 2축은 max 2.0
+    out = {"A": A, "D": D, "scores5": SCORES5, "scores2": SCORES2,
+           "B5": {}, "B2": {}, "C5": {}, "C2": {}}
+
+    def delta(m):
+        m = dict(m); m["d_calmar"] = round(m["calmar"] - A["calmar"], 2)
+        m["d_total"] = round(m["total"] - A["total"], 1); return m
+
+    for S in SCORES5:
+        out["B5"]["%.1f" % S] = delta(run(E(stratB(score5, S))))
+        e, pu, wf = stratC(score5, S); m = delta(run(E(e))); m["pre_up"] = pu; m["whipsaw"] = wf
+        out["C5"]["%.1f" % S] = m
+    for S in SCORES2:
+        out["B2"]["%.1f" % S] = delta(run(E(stratB(score2, S))))
+        e, pu, wf = stratC(score2, S); m = delta(run(E(e))); m["pre_up"] = pu; m["whipsaw"] = wf
+        out["C2"]["%.1f" % S] = m
+
+    def plateau(d):
+        ks = sorted(d.keys(), key=float)
+        flags = [d[k]["d_calmar"] > 0.02 for k in ks]
+        best = cur = 0
+        for f in flags:
+            cur = cur + 1 if f else 0; best = max(best, cur)
+        return best
+    out["plateau"] = {"B5": plateau(out["B5"]), "C5": plateau(out["C5"]),
+                      "B2": plateau(out["B2"]), "C2": plateau(out["C2"])}
+    out["n5"] = len(SCORES5); out["n2"] = len(SCORES2)
+    return out
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -932,10 +1088,12 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     trim_regime = trim_regime_compare(df, cost_bps, expense)
     bear_hist = bear_history_research(df, cost_bps, expense)
     cross_pre = cross_pretrade_research(df, cost_bps, expense)
+    div_pre = divergence_pretrade_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
             "trim_regime": trim_regime, "bear_history": bear_hist, "cross_pretrade": cross_pre,
+            "divergence_pretrade": div_pre,
             "cost_bps": cost_bps, "expense": expense}

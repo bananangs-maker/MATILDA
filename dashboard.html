@@ -694,6 +694,8 @@
     <div id="qBearHist"></div>
     <div class="qsub2">⑧ 200선 부근 크로스 선매매 검증 <span class="hint">준호 가설: 200일선 ±Z% 부근에서 MACD 크로스로 돌파 방향을 미리 잡아 선매매하면 단순 200MA보다 나은가. Z=2/3/5% 비교 + 선매매 적중률. ※ TQQQ·SOXL 둘 다 개선돼야 채택(한쪽만이면 과적합)</span></div>
     <div id="qCrossPre"></div>
+    <div class="qsub2">⑨ 다이버전스 선매매 검증 <span class="hint">A:200MA단독 · B:다이버전스단독 · C:200MA+선행 · D:Buy&amp;Hold 대조. score 임계 스윕(평원) + 5지표 vs 2축(RSI·OBV) 단순화 대조 + 미래참조 차단. ※ 5지표가 같은 종가 피벗 사용(정보중복 큼)</span></div>
+    <div id="qDivPre"></div>
     <div class="qsub2">두 엔진 + 베이스라인 비교 <span class="hint">200MA engine(라이브 코어) vs 20-parameter engine(옛 복잡 엔진) vs 단순 규칙 — 위험조정(샤프·칼마)으로</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1769,6 +1771,35 @@ function renderQuant(d){
         +"<b style='color:var(--caution)'>판정 원칙</b>: ①넓은 평원(특정 존만 X) ②<b>4종목(TQQQ·SOXL·QQQ·SPY) 일관</b> 둘 다 충족해야 의미. 한 종목·한 칸만 좋으면 과거 노이즈에 맞춘 과적합. 매매원칙 변경이 아니라 효과 검증용.</div>";
       document.getElementById('qCrossPre').innerHTML=h;
     }
+    // ⑨ 다이버전스 선매매 검증
+    const dp=d.divergence_pretrade;
+    if(dp&&dp.A){
+      const A=dp.A, D=dp.D;
+      const dc=(m)=>{const v=m.d_calmar,col=v>0.02?'var(--up)':v<-0.02?'var(--down)':'var(--muted)';
+        return "<span style='color:"+col+"'><b>"+(v>0?'+':'')+v+"</b></span>";};
+      let h="<div class='btnote' style='margin-bottom:7px'>기준 <b>A(200MA단독)</b>: 수익 "+(A.total>=0?'+':'')+A.total+"% · 칼마 <b>"+A.calmar+"</b> · 거래 "+A.trades+"회 · 승률 "+A.win_rate+"% · TIM "+A.time_in_market+"% &nbsp;|&nbsp; <b>D(Buy&Hold)</b>: 수익 "+(D.total>=0?'+':'')+D.total+"% · 칼마 "+D.calmar+"</div>";
+      const tbl=(title,obj,scores,isC)=>{
+        let t="<div class='qsub3' style='margin-top:8px;font-size:11px;color:var(--ink)'>"+title+"</div>";
+        t+="<table class='wftab'><tr><th>score 컷</th><th>Δ칼마</th><th>총수익</th><th>거래</th><th>승률</th><th>기대값</th><th>TIM</th>"+(isC?"<th>선진입</th><th>헛진입%</th>":"")+"</tr>";
+        scores.forEach(s=>{const m=obj[s]; if(!m)return;
+          t+="<tr><td>≥"+s+"</td><td>"+dc(m)+"</td>"
+            +"<td class='"+(m.d_total>=0?'pos':'neg')+"'>"+(m.d_total>=0?'+':'')+m.d_total+"%</td>"
+            +"<td>"+m.trades+"</td><td>"+(m.win_rate==null?'—':m.win_rate+'%')+"</td>"
+            +"<td>"+(m.expectancy==null?'—':(m.expectancy>0?'+':'')+m.expectancy+'%')+"</td>"
+            +"<td>"+m.time_in_market+"%</td>"
+            +(isC?("<td>"+(m.pre_up||0)+"</td><td>"+(m.whipsaw==null?'—':m.whipsaw+'%')+"</td>"):"")
+            +"</tr>";});
+        t+="</table>"; return t;};
+      const s5=Object.keys(dp.B5), s2=Object.keys(dp.B2), pl=dp.plateau;
+      h+=tbl("B · 다이버전스 단독 (5지표)",dp.B5,s5,false);
+      h+=tbl("B · 다이버전스 단독 (2축: RSI+OBV)",dp.B2,s2,false);
+      h+=tbl("C · 200MA + 선행트리거 (5지표)",dp.C5,s5,true);
+      h+=tbl("C · 200MA + 선행트리거 (2축)",dp.C2,s2,true);
+      h+="<div class='btnote' style='margin-top:7px'>평원(Δ칼마>0 연속칸): B5 <b>"+pl.B5+"/"+dp.n5+"</b> · C5 <b>"+pl.C5+"/"+dp.n5+"</b> · B2 "+pl.B2+"/"+dp.n2+" · C2 "+pl.C2+"/"+dp.n2+". "
+        +"<b style='color:var(--caution)'>판정</b>: ①넓은 평원 ②TQQQ·SOXL·QQQ·SPY 4종목 일관 ③5지표가 2축 단순화보다 確 우월 — 셋 다 충족해야 채택. "
+        +"<b>헛진입%</b>=200선 부근 선진입이 10봉 내 실제 상향 미확정 비율(높을수록 선매매 손해). 미래참조 차단(피벗 3봉 지연) 적용. 매매원칙 변경이 아니라 효과 검증용.</div>";
+      document.getElementById('qDivPre').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1828,13 +1859,13 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist','qCrossPre'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist','qCrossPre','qDivPre'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qr_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qs_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1851,7 +1882,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qr_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qs_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
