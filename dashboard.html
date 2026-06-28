@@ -444,7 +444,7 @@
     <button class="on" data-s="sma200"><span class="sw" style="background:#FFC94D"></span>200MA</button>
     <button data-s="sar"><span class="sw" style="background:#5A6472"></span>SAR</button>
     <button class="on" data-s="vol"><span class="sw" style="background:#26C281"></span>거래량</button>
-    <button class="on" data-s="sig"><span class="sw" style="background:#8A8F9A"></span>매매신호</button>
+    <button class="on" data-s="sig"><span class="sw" style="background:#8A8F9A"></span>크로스 매매신호</button>
     <button data-s="vwap"><span class="sw" style="background:#E0A458"></span>VWAP</button>
     <button data-s="ichi"><span class="sw" style="background:#26C6DA"></span>일목구름</button>
     <button data-s="kelt"><span class="sw" style="background:#7FB3FF"></span>Keltner</button>
@@ -690,6 +690,8 @@
     <div id="qDip"></div>
     <div class="qsub2">⑦ 장기 약세장 검증 <span class="hint">기초지수(QQQ 등)에 엔진 적용 → 닷컴·금융위기에서 작동하나. 1배+×3합성. ※ QQQ로 'max 기간' 체크 후 돌릴 것 (TQQQ/SOXL은 2010년생이라 약세장 없음)</span></div>
     <div id="qBearHist"></div>
+    <div class="qsub2">⑧ 200선 부근 크로스 선매매 검증 <span class="hint">준호 가설: 200일선 ±Z% 부근에서 MACD 크로스로 돌파 방향을 미리 잡아 선매매하면 단순 200MA보다 나은가. Z=2/3/5% 비교 + 선매매 적중률. ※ TQQQ·SOXL 둘 다 개선돼야 채택(한쪽만이면 과적합)</span></div>
+    <div id="qCrossPre"></div>
     <div class="qsub2">두 엔진 + 베이스라인 비교 <span class="hint">200MA engine(라이브 코어) vs 20-parameter engine(옛 복잡 엔진) vs 단순 규칙 — 위험조정(샤프·칼마)으로</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1738,6 +1740,24 @@ function renderQuant(d){
       }
       document.getElementById('qBearHist').innerHTML=h;
     }
+    // ⑧ 200선 부근 크로스 선매매 검증
+    const cp=d.cross_pretrade;
+    if(cp&&cp.base){
+      const b=cp.base;
+      const cell=(m,k,suf)=>{const v=m[k]; const cls=(k==='mdd'||v<0)?'neg':(k==='total'&&v>=0?'pos':''); 
+        return "<td class='"+cls+"'>"+(v==null?'—':((k==='total'&&v>=0?'+':'')+v+(suf||'')))+"</td>";};
+      let h="<table class='wftab'><tr><th>방식</th><th>총수익</th><th>MDD</th><th>칼마</th><th>선매매 시도</th><th>적중률</th><th>판정</th></tr>";
+      h+="<tr><td><b>기본 (단순 200MA)</b></td>"+cell(b,'total','%')+cell(b,'mdd','%')+cell(b,'calmar','')+"<td>—</td><td>—</td><td>기준</td></tr>";
+      Object.keys(cp.variants).forEach(z=>{const m=cp.variants[z];
+        const dCal=m.calmar-b.calmar, dTot=m.total-b.total;
+        const verdict=(dCal>0.03&&dTot>0)?"<span style='color:var(--up)'>개선</span>":(dCal<-0.03||dTot<-2)?"<span style='color:var(--down)'>악화</span>":"<span style='color:var(--muted)'>비슷</span>";
+        h+="<tr><td>선매매 "+z+"</td>"+cell(m,'total','%')+cell(m,'mdd','%')+cell(m,'calmar','')
+          +"<td>"+(m.trades||0)+"</td><td>"+(m.hit_rate==null?'—':m.hit_rate+'%')+"</td><td>"+verdict+"</td></tr>";});
+      h+="</table>";
+      h+="<div class='btnote' style='margin-top:7px'>주가가 200일선 ±Z% 부근일 때 MACD 크로스(최근 5봉) 방향으로 선매매 → 단순 200MA 대비 비교. <b>적중률</b>=선매매 방향이 10봉 내 실제 돌파로 확인된 비율. "
+        +"<b style='color:var(--caution)'>중요</b>: 이 종목 한 종목에서 개선돼도 채택 금지 — <b>TQQQ·SOXL 둘 다</b> 개선돼야 의미. 한쪽만이면 과적합(특히 SOXL 고변동 구간 주의). 매매원칙(200MA 코어) 변경이 아니라 '부근 선반영' 효과 검증용.</div>";
+      document.getElementById('qCrossPre').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1797,13 +1817,13 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist','qCrossPre'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qp_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qq_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1820,7 +1840,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qp_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qq_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }

@@ -816,6 +816,77 @@ def bear_history_research(df, cost_bps=5.0, expense=0.0095, lev_fee=0.0095):
     return out
 
 
+def cross_pretrade_research(df, cost_bps=5.0, expense=0.0095):
+    """[200선 부근 크로스 선매매 검증] 준호 가설:
+    주가가 200일선 ±Z% 이내(부근)에 있을 때, MACD 골든/데드 크로스로 향후
+    상향/하향 돌파 방향을 미리 판단해 선매매하면 — 200선 실제 돌파를 기다리는
+    기본 코어보다 수익률/MDD/칼마가 개선되는가?
+    기본(base): 200선 위=100%, 아래=0% (단순 200MA).
+    선매매(pre): 200선 부근(±Z%)에서 최근 크로스 방향으로 선반영, 그 외엔 base와 동일.
+    여러 Z(2/3/5%)로 민감도 확인. 과적합 방지 위해 TQQQ·SOXL 둘 다에서 봐야 함(프론트 안내)."""
+    df = df.reset_index(drop=True)
+    close = df["close"]
+    sma200 = close.rolling(200).mean()
+    mline, msig, _ = I.macd(close)
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index
+    n = len(df)
+    # MACD 크로스 방향 (골든=+1, 데드=-1), 최근 LB봉 이내 유지
+    cu = ((mline > msig) & (mline.shift(1) <= msig.shift(1))).to_numpy()
+    cd = ((mline < msig) & (mline.shift(1) >= msig.shift(1))).to_numpy()
+    LB = 5
+    recent = np.zeros(n)
+    last_dir, last_i = 0, -999
+    for i in range(n):
+        if cu[i]:
+            last_dir, last_i = 1, i
+        elif cd[i]:
+            last_dir, last_i = -1, i
+        recent[i] = last_dir if (i - last_i) <= LB else 0
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float)
+        s[pd.Series(warm, index=idx)] = np.nan
+        return s
+
+    def run(e):
+        strat, pos, turn, _ = _exec_returns(df, e, cost_bps, expense)
+        m = _metrics(strat, pos, turn)
+        return m
+
+    e_base = np.where(above, 1.0, 0.0)
+    base_m = run(E(e_base))
+    out = {"base": base_m, "variants": {}}
+    # 선매매 적중률: 부근에서 선매매한 방향이 K봉 내 실제 돌파로 확인됐나
+    K = 10
+    for Z in (0.02, 0.03, 0.05):
+        zone = np.abs(disp) <= Z
+        e_pre = e_base.copy()
+        hits = 0; trades = 0
+        for i in range(n):
+            if warm[i] or not zone[i] or recent[i] == 0:
+                continue
+            if recent[i] > 0:
+                e_pre[i] = 1.0
+            else:
+                e_pre[i] = 0.0
+            # 선매매가 base와 달라진 경우만 '선매매 시도'로 카운트 + 적중 평가
+            if e_pre[i] != e_base[i]:
+                trades += 1
+                j = min(n - 1, i + K)
+                if recent[i] > 0 and above[j]:
+                    hits += 1
+                elif recent[i] < 0 and not above[j]:
+                    hits += 1
+        m = run(E(e_pre))
+        m["trades"] = trades
+        m["hit_rate"] = round(hits / trades * 100, 1) if trades else None
+        out["variants"]["±%d%%" % round(Z * 100)] = m
+    return out
+
+
 def analyze(df, cost_bps=5.0, expense=0.0095):
     p = {**ST.PARAMS}
     base = backtest(df, None, cost_bps, expense)
@@ -833,10 +904,11 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     dipentry = dipentry_research(df, cost_bps, expense)
     trim_regime = trim_regime_compare(df, cost_bps, expense)
     bear_hist = bear_history_research(df, cost_bps, expense)
+    cross_pre = cross_pretrade_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
-            "trim_regime": trim_regime, "bear_history": bear_hist,
+            "trim_regime": trim_regime, "bear_history": bear_hist, "cross_pretrade": cross_pre,
             "cost_bps": cost_bps, "expense": expense}
