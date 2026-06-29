@@ -656,6 +656,85 @@ def below200_response_research(df, cost_bps=5.0, expense=0.0095):
     return out
 
 
+def engine_compare_research(df, cost_bps=5.0, expense=0.0095):
+    """[엔진 코어 비교] 200MA가 정말 최선의 추세 엔진인가 — 10개 코어를 한 종목에서 비교.
+    추세추종 계열(200MA/100MA/50-200크로스/돈치안/절대모멘텀/엔벨로프) + 변동성타겟/고정비율
+    + 200MA분할(B균등/C가중). 각 코어 수익·MDD·칼마. 여러 종목 돌려 '일관 상위' 코어를 찾음.
+    철학 분명·자유도 낮은 코어만(과적합 방지). 200선이하 분할 외엔 모두 롱/현금 이진."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close = k["close"]; n = len(df)
+    sma200 = close.rolling(200).mean()
+    sma100 = close.rolling(100).mean()
+    sma50 = close.rolling(50).mean()
+    disp = (close / sma200 - 1.0).to_numpy()
+    above200 = (close > sma200).to_numpy()
+    idx = df.index
+
+    def E(arr):
+        warm = pd.Series(arr, index=idx, dtype=float).isna()
+        s = pd.Series(arr, index=idx, dtype=float); s[warm] = np.nan; return s
+    def run(arr):
+        sr, pos, turn, _ = _exec_returns(df, np.asarray(arr, float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); return {"total": m["total"], "mdd": m["mdd"], "calmar": m["calmar"]}
+
+    cores = {}
+    # 1. 200MA 단일
+    cores["200MA"] = np.where(above200, 1.0, 0.0)
+    # 2. 100MA 단일
+    cores["100MA"] = np.where((close > sma100).to_numpy(), 1.0, 0.0)
+    # 3. 50/200 크로스 (골든=보유, 데드=현금)
+    cores["50-200크로스"] = np.where((sma50 > sma200).to_numpy(), 1.0, 0.0)
+    # 4. 돈치안 채널 (20일 신고가 진입 / 10일 신저가 청산)
+    hi20 = close.rolling(20).max(); lo10 = close.rolling(10).min()
+    dc = np.zeros(n); cur = 0.0
+    cv = close.to_numpy(); h20 = hi20.to_numpy(); l10 = lo10.to_numpy()
+    for i in range(n):
+        if np.isnan(h20[i]) or np.isnan(l10[i]): dc[i] = np.nan; continue
+        if cv[i] >= h20[i]: cur = 1.0
+        elif cv[i] <= l10[i]: cur = 0.0
+        dc[i] = cur
+    cores["돈치안채널"] = dc
+    # 5. 절대 모멘텀 (최근 6개월=126봉 수익률>0이면 보유)
+    mom = close / close.shift(126) - 1.0
+    cores["절대모멘텀"] = np.where(mom.to_numpy() > 0, 1.0, 0.0)
+    cores["절대모멘텀"][:126] = np.nan
+    # 6. MA 엔벨로프 (200MA +2% 상향돌파 진입 / -2% 하향 청산, 휩쏘 완충)
+    env = np.zeros(n); cur = 0.0
+    for i in range(n):
+        if np.isnan(disp[i]): env[i] = np.nan; continue
+        if disp[i] > 0.02: cur = 1.0
+        elif disp[i] < -0.02: cur = 0.0
+        env[i] = cur
+    cores["MA엔벨로프"] = env
+    # 7. 변동성 타겟 (기존 파라미터 엔진 exposure_core)
+    try:
+        cores["변동성타겟"] = ST.exposure_core(df).to_numpy(float)
+    except Exception:
+        cores["변동성타겟"] = np.full(n, np.nan)
+    # 8. 고정 비율 (상시 60% 노출 — 단순 벤치)
+    cores["고정60%"] = np.full(n, 0.6); cores["고정60%"][:1] = np.nan
+    # 9·10. 200MA + 분할매수 (B 균등 / C 가중) — below200_response의 liq_buy 재현
+    STEPS = (-0.15, -0.30, -0.45)
+    def dip(weights):
+        e = np.where(above200, 1.0, 0.0).astype(float)
+        for i in range(n):
+            if np.isnan(disp[i]): e[i] = np.nan; continue
+            if not above200[i]:
+                base = 0.0
+                for s_i, th in enumerate(STEPS):
+                    if disp[i] <= th: base += weights[s_i]
+                e[i] = min(1.0, base)
+        return e
+    cores["200MA+분할B"] = dip((1/3, 1/3, 1/3))
+    cores["200MA+분할C"] = dip((1/6, 2/6, 3/6))
+
+    out = {}
+    for nm, arr in cores.items():
+        out[nm] = run(E(arr))
+    return out
+
+
 def dipentry_research(df, cost_bps=5.0, expense=0.0095):
     """[200선 아래 분할진입 검증] 준호 가설: 200선 하향돌파 후 깊은 이격 구간에서 분할 매수하면
     200선 상향돌파 시 전량진입보다 나은가. 비교: 전량(기준) vs 분할 A/B/C(이격 단계 다르게).
@@ -1166,6 +1245,7 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     cross_pre = cross_pretrade_research(df, cost_bps, expense)
     div_pre = divergence_pretrade_research(df, cost_bps, expense)
     below200 = below200_response_research(df, cost_bps, expense)
+    eng_cmp = engine_compare_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
@@ -1173,4 +1253,5 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
             "trim_regime": trim_regime, "bear_history": bear_hist, "cross_pretrade": cross_pre,
             "divergence_pretrade": div_pre, "below200_response": below200,
+            "engine_compare": eng_cmp,
             "cost_bps": cost_bps, "expense": expense}
