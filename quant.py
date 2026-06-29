@@ -580,6 +580,82 @@ def breakdown_research(df):
             "total_breaks": len(episodes)}
 
 
+def below200_response_research(df, cost_bps=5.0, expense=0.0095):
+    """[200선 이하 분할 대응 검증] CAGR 엔진 + 패닉그리드 가중을 하나로.
+    200선 이탈 후 행동을 5개 시나리오로 비교 — 청산방식 × 받는방식.
+    A: 칼마(전량청산, 안받음) / B: 청산+균등받기 / C: 청산+가중받기
+    D: 홀딩+균등물타기 / E: 홀딩+가중물타기. 단계 -15/-30/-45%. 홀딩(D·E)은 손절선 스윕.
+    위(200선 상향)·과열익절은 전 시나리오 동일(칼마와 같음) — 차이는 오직 200선 이하 대응.
+    ※ 깊은 이격 표본 적음(과적합 위험) → 단순 가중(3:2:1), 4종목·칼마 우선으로 판정."""
+    df = df.reset_index(drop=True)
+    k = ST.indikit(df)
+    close, sma200 = k["close"], k["sma200"]
+    warm = sma200.isna().to_numpy()
+    above = (close > sma200).to_numpy()
+    disp = (close / sma200 - 1.0).to_numpy()
+    idx = df.index; n = len(df)
+    # 과열 익절(전 시나리오 공통, 칼마와 동일): 200선 위에서의 비중
+    TH = (0.25, 0.42, 0.60); CUT = 0.15
+    def above_expo(i, level_box):
+        d = disp[i]; lv = level_box[0]
+        while lv < 3 and d > TH[lv]: lv += 1
+        while lv > 0 and d < (TH[lv-1] - 0.05): lv -= 1
+        level_box[0] = lv
+        return max(0.0, 1.0 - CUT*lv)
+    STEPS = (-0.15, -0.30, -0.45)       # 분할 받기 단계
+    W_EQ = (1/3, 1/3, 1/3)              # 균등
+    W_WT = (1/6, 2/6, 3/6)             # 가중(깊을수록↑, 3:2:1 → -45%에 3)
+
+    def E(arr):
+        s = pd.Series(arr, index=idx, dtype=float); s[pd.Series(warm, index=idx)] = np.nan
+        return s
+    def run(arr):
+        sr, pos, turn, _ = _exec_returns(df, E(arr).to_numpy(float), cost_bps, expense)
+        m = _metrics(sr, pos, turn); m.update(_trade_stats(sr, pos)); return m
+
+    def build(mode, weights=None, stop=None):
+        """mode: 'calmar'|'liq_buy'|'hold_buy'.
+        calmar: 200선 아래 전량 현금(0).
+        liq_buy: 200선 이탈 시 청산(0), 깊은 이격 단계에서 누적 분할매수(현금→매수), cap 1.0.
+        hold_buy: 200선 아래도 핵심 0.55 유지(홀딩), 깊은 단계서 추가매수 cap 1.0, 손절선 이하 0."""
+        expo = np.zeros(n); lvbox = [0]
+        for i in range(n):
+            if warm[i]:
+                expo[i] = 0.0; continue
+            if above[i]:
+                expo[i] = above_expo(i, lvbox); continue
+            lvbox[0] = 0  # 200선 아래로 내려오면 익절단계 리셋
+            d = disp[i]
+            if mode == 'calmar':
+                expo[i] = 0.0
+            elif mode == 'liq_buy':
+                base = 0.0
+                for s_i, th in enumerate(STEPS):
+                    if d <= th: base += weights[s_i]
+                expo[i] = min(1.0, base)
+            elif mode == 'hold_buy':
+                if stop is not None and d <= stop:
+                    expo[i] = 0.0
+                else:
+                    add = 0.0
+                    for s_i, th in enumerate(STEPS):
+                        if d <= th: add += weights[s_i]
+                    expo[i] = min(1.0, 0.55 + add)   # 핵심 55% 홀딩 + 깊은 단계 추가매수
+        return expo
+
+    out = {"scenarios": {}, "stops": ["-40%", "-50%", "-60%", "없음"]}
+    out["scenarios"]["A_칼마"] = run(build('calmar'))
+    out["scenarios"]["B_청산균등"] = run(build('liq_buy', W_EQ))
+    out["scenarios"]["C_청산가중"] = run(build('liq_buy', W_WT))
+    # D·E: 손절선 스윕
+    STOPS = {"-40%": -0.40, "-50%": -0.50, "-60%": -0.60, "없음": -0.99}
+    out["D_홀딩균등"] = {}; out["E_홀딩가중"] = {}
+    for label, sv in STOPS.items():
+        out["D_홀딩균등"][label] = run(build('hold_buy', W_EQ, sv))
+        out["E_홀딩가중"][label] = run(build('hold_buy', W_WT, sv))
+    return out
+
+
 def dipentry_research(df, cost_bps=5.0, expense=0.0095):
     """[200선 아래 분할진입 검증] 준호 가설: 200선 하향돌파 후 깊은 이격 구간에서 분할 매수하면
     200선 상향돌파 시 전량진입보다 나은가. 비교: 전량(기준) vs 분할 A/B/C(이격 단계 다르게).
@@ -1089,11 +1165,12 @@ def analyze(df, cost_bps=5.0, expense=0.0095):
     bear_hist = bear_history_research(df, cost_bps, expense)
     cross_pre = cross_pretrade_research(df, cost_bps, expense)
     div_pre = divergence_pretrade_research(df, cost_bps, expense)
+    below200 = below200_response_research(df, cost_bps, expense)
     return {"stats": base["stats"], "equity": base["equity"], "bh": base["bh"],
             "walk_forward": wf, "robustness": rob, "monte_carlo": mc,
             "baselines": bl, "regime_perf": rp, "rolling": roll, "ma_research": mar,
             "entry_diag": entry_diag, "exit_research": exitr, "reentry_research": reentry,
             "bear_research": bearr, "breakdown_research": breakdown, "dipentry_research": dipentry,
             "trim_regime": trim_regime, "bear_history": bear_hist, "cross_pretrade": cross_pre,
-            "divergence_pretrade": div_pre,
+            "divergence_pretrade": div_pre, "below200_response": below200,
             "cost_bps": cost_bps, "expense": expense}

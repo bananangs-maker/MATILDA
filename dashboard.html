@@ -502,12 +502,10 @@
         <div class="sizebar"><div class="sizefill" id="eng200Fill" style="width:0%"></div></div>
         <div id="eng200Extra"></div>
       </div>
-      <div class="card" style="display:flex;flex-direction:column">
+      <div class="card">
         <div class="lab">종목 정보 <span class="hint" id="fundKind"></span></div>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:2px">
-          <div class="senti" id="fundPrice"></div>
-          <div id="fundExtra"></div>
-        </div>
+        <div class="senti" id="fundPrice"></div>
+        <div id="fundExtra"></div>
       </div>
     </div>
     <div class="card" id="diverCard" style="margin-bottom:10px">
@@ -698,6 +696,8 @@
     <div id="qCrossPre"></div>
     <div class="qsub2">⑨ 다이버전스 선매매 검증 <span class="hint">A:200MA단독 · B:다이버전스단독 · C:200MA+선행 · D:Buy&amp;Hold 대조. score 임계 스윕(평원) + 5지표 vs 2축(RSI·OBV) 단순화 대조 + 미래참조 차단. ※ 5지표가 같은 종가 피벗 사용(정보중복 큼)</span></div>
     <div id="qDivPre"></div>
+    <div class="qsub2">⑩ 200선 이하 분할 대응 검증 <span class="hint">CAGR 엔진 + 패닉그리드 가중. A:칼마(전량청산) · B:청산+균등받기 · C:청산+가중받기 · D:홀딩+균등물타기 · E:홀딩+가중물타기. 단계 −15/−30/−45% · 홀딩 손절선 스윕</span></div>
+    <div id="qBelow200"></div>
     <div class="qsub2">두 엔진 + 베이스라인 비교 <span class="hint">200MA engine(라이브 코어) vs 20-parameter engine(옛 복잡 엔진) vs 단순 규칙 — 위험조정(샤프·칼마)으로</span></div>
     <div id="qBase"></div>
     <div class="qsub2">레짐별 조건부 성과 <span class="hint">언제 작동/실패하는가 — 200일선 위·아래, 추세·횡보 구간 분해</span></div>
@@ -1813,6 +1813,31 @@ function renderQuant(d){
         +"<b>헛진입%</b>=200선 부근 선진입이 10봉 내 실제 상향 미확정 비율(높을수록 선매매 손해). 미래참조 차단(피벗 3봉 지연) 적용. 매매원칙 변경이 아니라 효과 검증용.</div>";
       document.getElementById('qDivPre').innerHTML=h;
     }
+    // ⑩ 200선 이하 분할 대응 검증
+    const bl2=d.below200_response;
+    if(bl2&&bl2.scenarios){
+      const A=bl2.scenarios['A_칼마'];
+      const dcal=(m)=>{const v=+(m.calmar-A.calmar).toFixed(2),col=v>0.02?'var(--up)':v<-0.02?'var(--down)':'var(--muted)';
+        return "<span style='color:"+col+"'><b>"+(v>0?'+':'')+v+"</b></span>";};
+      const row=(nm,m,note)=>"<tr><td style='text-align:left'>"+nm+"</td>"
+        +"<td>"+dcal(m)+"</td>"
+        +"<td class='"+(m.total>=A.total?'pos':'neg')+"'>"+(m.total>=0?'+':'')+m.total+"%</td>"
+        +"<td>"+m.calmar+"</td><td class='neg'>"+m.mdd+"%</td><td>"+m.time_in_market+"%</td>"
+        +(note?"<td style='color:var(--faint);font-size:10px'>"+note+"</td>":"<td></td>")+"</tr>";
+      let h="<div class='btnote' style='margin-bottom:7px'>기준 <b>A 칼마(전량청산)</b>: 칼마 <b>"+A.calmar+"</b> · 총 "+(A.total>=0?'+':'')+A.total+"% · MDD "+A.mdd+"%. 200선 <b>위·과열익절은 전 시나리오 동일</b>, 차이는 오직 200선 이하 대응.</div>";
+      h+="<table class='wftab'><tr><th>시나리오</th><th>Δ칼마</th><th>총수익</th><th>칼마</th><th>MDD</th><th>TIM</th><th>비고</th></tr>";
+      h+=row('A · 칼마 (전량청산·안받음)',A,'현 코어');
+      h+=row('B · 청산 + 균등받기',bl2.scenarios['B_청산균등'],'');
+      h+=row('C · 청산 + 가중받기',bl2.scenarios['C_청산가중'],'−45%에 더');
+      Object.keys(bl2.D_홀딩균등).forEach(s=>h+=row('D · 홀딩+균등물타기 (손절'+s+')',bl2.D_홀딩균등[s],''));
+      Object.keys(bl2.E_홀딩가중).forEach(s=>h+=row('E · 홀딩+가중물타기 (손절'+s+')',bl2.E_홀딩가중[s],''));
+      h+="</table>";
+      h+="<div class='btnote' style='margin-top:7px'><b>읽는 법</b>: A는 현 칼마 엔진(계좌A). B·C는 청산 후 깊은 이격(−15/−30/−45%)에서 현금으로 분할매수. "
+        +"D·E는 200선 깨도 핵심 55% <b>홀딩</b>하며 물타기(손절선 도달 시 청산). 가중=−45%에 더 싣기(3:2:1). "
+        +"<b style='color:var(--caution)'>판정</b>: 수익↑여도 <b>MDD·칼마</b>를 함께 볼 것. D·E는 수익 높아도 MDD가 클 가능성 — 계좌B(공격)용. "
+        +"4종목(TQQQ·SOXL·QQQ·SPY) 일관성 필수. 깊은 이격은 표본 적어 과적합 주의. ※ QQQ max로 약세장 포함해 봐야 의미.</div>";
+      document.getElementById('qBelow200').innerHTML=h;
+    }
     // 단순 베이스라인 비교
     const bl=d.baselines;
     if(bl){
@@ -1872,13 +1897,13 @@ function renderQuant(d){
         +"<div style='font-size:10px;color:var(--faint);margin-bottom:2px'>최대낙폭 분포</div><div class='mchist'>"+bars+"</div></div>";
     }else document.getElementById('qMc').innerHTML='';
 }
-function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist','qCrossPre','qDivPre'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
+function clearQuant(){['qPeriod','qStats','qWf','qRob','qMc','qBase','qRegime','qRoll','qMaR','qExit','qBear','qReentry','qTrimReg','qBreak','qDip','qBear','qBearHist','qCrossPre','qDivPre','qBelow200'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='';});
   rollChart=null; rollS=null;
   document.getElementById('qPeriod').textContent='실행 시 결과가 저장되어 새로고침해도 유지됩니다.';}
 function restoreQuant(){
   // 종목 전환 시 직전 종목의 반등확률(bandStats)이 남지 않도록 초기화. 캐시 있으면 renderQuant가 해당 종목 값으로 재설정.
   state.bandStats=null;
-  try{const raw=localStorage.getItem('mat_qs_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
+  try{const raw=localStorage.getItem('mat_qt_'+state.ticker); if(!raw){clearQuant();if(typeof applyBandLabels==='function')applyBandLabels();return false;}
     const d=JSON.parse(raw);
     if(d._cost)document.getElementById('qCost').value=d._cost;
     if(d._exp)document.getElementById('qExp').value=d._exp;
@@ -1895,7 +1920,7 @@ async function runQuant(){
     if(d.error)throw new Error(d.error);
     d._cost=cost; d._exp=exp;
     renderQuant(d);
-    try{localStorage.setItem('mat_qs_'+state.ticker,JSON.stringify(d));}catch(e){}
+    try{localStorage.setItem('mat_qt_'+state.ticker,JSON.stringify(d));}catch(e){}
   }catch(e){document.getElementById('qStats').innerHTML="<div class='btnote' style='color:var(--stop)'>실패: "+e.message+"</div>";}
   finally{btn.disabled=false;btn.textContent='백테스트 실행';}
 }
@@ -2634,6 +2659,8 @@ function renderFundamentals(f){
   }else{
     html="<div class='btnote' style='margin-top:8px'>재무지표 없음(ETF이거나 무료 데이터 미제공)</div>";
   }
+  // 항상 표시되는 맥락 한 줄 (좌측 엔진 패널과 높이 균형 + 원칙 환기)
+  html+="<div class='btnote' style='margin-top:8px;padding-top:7px;border-top:1px solid var(--border2);color:var(--faint)'>이 정보는 <b>판단의 참고</b>일 뿐, 매매 결정은 좌측 200MA 엔진 신호를 따른다.</div>";
   ex.innerHTML=html;
 }
 
