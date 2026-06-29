@@ -138,7 +138,17 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             while level > 0 and d < (TH[level - 1] - MARGIN):
                 level -= 1
         triggered = level
-        target = max(0.0, 1.0 - CUT * level) if above200 else 0.0
+        # ── MATILDA CORE: 200선 이하 분할매수B (17종목 검증 — 200MA 단일 대비 수익·칼마 모두↑) ──
+        # 200선 위=홀딩(과열 익절), 200선 아래=깊은 이격 단계(-15/-30/-45%)에서 균등 분할매수.
+        DIP_STEPS = [-0.15, -0.30, -0.45]; DIP_W = 1.0/3.0   # 각 단계 1/3씩 누적(균등=B)
+        dip_level = 0
+        if not above200:
+            for th in DIP_STEPS:
+                if disp <= th: dip_level += 1
+            below_target = min(1.0, DIP_W * dip_level)
+        else:
+            below_target = 0.0
+        target = max(0.0, 1.0 - CUT * level) if above200 else below_target
         # 역배열 기울기전환: 역배열(50<200)이면서 200선이 우하향(20일 전보다↓)이면 관망(현금).
         # 정배열 구간은 영향 없음(200MA 코어 그대로). 검증: TQQQ·QQQ·SOXL 전체 칼마↑·역배열 MDD↓.
         sma50_s = k.get("sma50")
@@ -148,6 +158,14 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
         watch_mode = bool(above200 and bear_now and not rising_now)
         if watch_mode:
             target = 0.0
+        # 분할매수 단계 정보(대시보드 표시용)
+        dip_steps = []
+        if not above200:
+            for j, th in enumerate(DIP_STEPS):
+                dip_steps.append({"disparity": round(th * 100),
+                                  "price": round(sma200 * (1 + th), 2),
+                                  "buy_pct": round(DIP_W * 100),
+                                  "hit": bool(dip_level > j)})
         steps = []
         for j, (th, cut) in enumerate(DISP_STEPS):
             steps.append({"disparity": round(th * 100),
@@ -163,6 +181,8 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
             "target_pct": target_pct,                 # 권장 보유비중(%)
             "trim_total_pct": int(round((1 - target) * 100)) if above200 else None,  # 지금까지 누적 익절%
             "steps": steps,
+            "dip_steps": dip_steps,                   # 200선 이하 분할매수 단계
+            "dip_level": int(dip_level),              # 현재 도달한 분할 단계(0~3)
             "stages_triggered": triggered,
             "entry_signal": bool(entry_signal),
             "reentry_signal": bool(reentry_signal),
@@ -172,7 +192,7 @@ def compute_engine(df: pd.DataFrame, vix=None, fng=None, params: dict = None) ->
     else:
         exit_plan = {"above200": False, "price": round(c, 2), "sma200": None,
                      "disparity": None, "target_pct": None, "trim_total_pct": None,
-                     "steps": [], "stages_triggered": 0,
+                     "steps": [], "dip_steps": [], "dip_level": 0, "stages_triggered": 0,
                      "entry_signal": False, "reentry_signal": False, "days_above": 0, "watch_mode": False}
 
     return {
