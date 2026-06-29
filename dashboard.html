@@ -516,22 +516,6 @@
       <div class="lab">과열 분할 익절 플랜 <span class="hint" style="float:right">검증된 알파 · 200일선 이격도 단계별 익절(핵심 55% 홀딩 유지)</span></div>
       <div id="exitPlanBody"></div>
     </div>
-    <div class="card" id="panicCard" style="margin-bottom:10px">
-      <div class="lab">패닉 그리드 분할매수 <span class="hint" style="float:right">비상 시스템 · 엔진(200선 청산) 실패한 깊은 급락에서만 작동</span></div>
-      <div class="panic-cfg">
-        <label>예비현금($)</label>
-        <input id="panicCash" class="cash" type="number" value="10000" step="1000">
-        <label>단계 이격(%)</label>
-        <span class="lvgrp">
-          <input id="panicL1" type="number" value="-15" step="1">
-          <input id="panicL2" type="number" value="-30" step="1">
-          <input id="panicL3" type="number" value="-45" step="1">
-        </span>
-        <label>배분</label>
-        <select id="panicAlloc"><option value="equal">균등(⅓씩)</option><option value="escal">심화(깊을수록↑)</option></select>
-      </div>
-      <div id="panicBody"></div>
-    </div>
     <div id="masonbody">
       <div class="stack">
         <div class="card">
@@ -2399,6 +2383,7 @@ function renderExitPlan(x){
 function matildaSays(x, m){
   // "맑은 정신의 준호가 흔들리는 준호에게 미리 써둔 한 마디" — 상황별 고정 메시지.
   // 실시간 클로드가 아니라, 준호 자신의 원칙의 거울. 항상 옳은 조언이 아니라 '약속'을 상기시키는 장치.
+  const GREEN='#2bd07a', RED='#E0322B';
   const ret1=(m&&m.ret1!=null)?m.ret1:0;
   const disp=(x.disparity!=null)?x.disparity:0;
   let title="마틸다의 한 마디", msg="", mood="calm";
@@ -2453,7 +2438,7 @@ function renderEng200(x, engMetrics){
       + mk((fl.trimStage?("▼ 익절 "+fl.trimStage+"단계"):"▼ 익절"), !!fl.trim, AMBER2)
       + mk("▲ 재진입", !!fl.reentry, AMBER2)
       + mk("역배열전환", !!fl.watch, RED)
-      + mk("패닉그리드", !!fl.panic, RED)
+      + mk("분할매수", !!fl.panic, AMBER2)
       + "</div>";
   }
   const panicActive = (x && x.disparity!=null && x.disparity <= -15);
@@ -2526,9 +2511,9 @@ function renderEng200(x, engMetrics){
 }
 function renderEngine(e){
   if(!e)return;
-  renderEng200(e.exit_plan, e.metrics||{});
-  renderExitPlan(e.exit_plan);
-  state._lastExitPlan=e.exit_plan; renderPanic(e.exit_plan);
+  try{ renderEng200(e.exit_plan, e.metrics||{}); }catch(err){ console.error('renderEng200',err); }
+  try{ renderExitPlan(e.exit_plan); }catch(err){ console.error('renderExitPlan',err); }
+  try{ state._lastExitPlan=e.exit_plan; renderPanic(e.exit_plan); }catch(err){ console.error('renderPanic',err); }
 }
 function gaugeStatic(){
   return "<svg viewBox='0 0 200 116'>"
